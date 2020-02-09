@@ -4,3 +4,4 @@
 [002 - Dynamic Programming](https://en.wikipedia.org/wiki/Dynamic_programming)
 [003 - backtracking](https://en.wikipedia.org/wiki/Backtracking)
 [004 - Divide-and conquer algorithm](https://en.wikipedia.org/wiki/Divide-and-conquer_algorithm)
+[004 - jstat, jmap, jhat, jstack]
