@@ -143,3 +143,302 @@ public class GcSurvivorTest {
 >1. survivor 区中的对象的 age 达到了 TenuringThreshold；
 ><br/>
 >2. survivor 区中的对象的 age 没有达到 TenuringThreshold，但是 survivor 区中的内存占用已经超过了 TenuringThreshold。这个时候 GC 为了降低 survivor 区的内存占用，就必须先临时的降低 TenuringThreshold，这样可以将 survivor 区的部分对象提升到老年代，当这些对象提升到老年代了之后， survivor 区又空出来了，那么 GC 会将 TenuringThreshold 还原到 MaxTenuringThreshold
+
+## [jhat](https://docs.oracle.com/javase/8/docs/technotes/tools/unix/jhat.html)
+
+>[OpenJDK 9: Life Without HPROF and jhat](https://www.infoq.com/news/2015/12/OpenJDK-9-removal-of-HPROF-jhat/)
+><br/>
+>**HPROF was not intended to be a production tool; it has been superseded by various other alternatives as documented below:**
+><br/>
+>According to JEP 241, jhat is an experimental, unsupported, and out-of-date tool. Although the JEP doesn’t specify any particular replacement tool, InfoQ would once again point users to Java `VisualVM` for heap dump creation, visualization and analysis.
+
+---
+
+**According to JEP 240, this functionality is superseded by the same functionality in the JVM by using the command line utilities such as ‘jcmd’ and ‘jmap’ as shown below:**
+
+```bash
+jcmd GC.heap_dump filename=<filename>
+```
+
+or
+
+```bash
+jmap [option] <pid>
+
+where <option>:
+
+-dump:<dump-options> to dump java heap in hprof binary format
+
+            dump-options:
+
+             live         dump only live objects; if not specified,
+
+                          all objects in the heap are dumped.
+
+             format=b     binary format
+
+             file=<file>  dump heap to <file>
+
+Example: jmap -dump:live,format=b,file=heap.bin <pid>
+```
+
+### Synopsis
+
+```bash
+jhat [ options ] heap-dump-file
+```
+
+>heap-dump-file
+><br/>
+>Java binary heap dump file to be browsed. For a dump file that contains multiple heap dumps, you can specify which dump in the file by appending #<number> to the file name, for example, myfile.hprof#3.
+
+### Description
+
+The `jhat` command parses a Java heap dump file and starts a web server. The jhat command lets you to browse heap dumps with your favorite web browser. 
+
+There are several ways to generate a Java heap dump:
+
+1. Use the `jmap -dump` option to obtain a heap dump at runtime.
+2. Heap dump is generated when an **OutOfMemoryError** is thrown by specifying the `-XX:+HeapDumpOnOutOfMemoryError` Java Virtual Machine (JVM) option.
+3. Use the `hprof` command. See the [HPROF](https://docs.oracle.com/javase/8/docs/technotes/samples/hprof.html): A Heap/CPU Profiling Tool at
+
+## [jmap](https://docs.oracle.com/javase/8/docs/technotes/tools/unix/jmap.html)
+
+>Prints shared object memory maps or heap memory details for a process, core file, or remote debug server. This command is experimental and unsupported.
+><br/>
+>**['Shared Object Memory' vs 'Heap Memory' - Java](https://stackoverflow.com/questions/6855112/shared-object-memory-vs-heap-memory-java)**
+
+### Synopsis
+
+- jmap [ options  ] pid
+- jmap [ options  ] executable core
+- jmap [ options  ] [ pid  ] server-id@ ] remote-hostname-or-IP
+
+### Options
+
+| option                                | desc                                                                                                                                                                                                                                                                                   |
+|---------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| no option                           | When no option is used, the jmap command prints shared object mappings. For each shared object loaded in the target JVM, the start address, size of the mapping, and the full path of the shared object file are printed. This behavior is similar to the Oracle Solaris pmap utility. |
+| -dump:[live,] format=b, file=filename | Dumps the Java heap in `hprof` binary format to filename. The live suboption is optional, but when specified, only the active objects in the heap are dumped. **To browse the heap dump, you can use the jhat(1) command to read the generated file.**                                 |
+| -heap                                 | Prints a heap summary of the **garbage collection used**, the head configuration, and generation-wise heap usage. In addition, the number and size of interned Strings are printed. |
+| histo | Prints a histogram of the heap. **For each Java class, the number of objects, memory size in bytes, and the fully qualified class names are printed**. The JVM internal class names are printed with an asterisk (*) prefix. If the live suboption is specified, then only active objects are counted. |
+
+#### -heap
+
+```
+using thread-local object allocation.
+Parallel GC with 4 thread(s)
+
+Heap Configuration:
+   MinHeapFreeRatio = 0
+   MaxHeapFreeRatio = 100
+   MaxHeapSize      = 2147483648 (2048.0MB)
+   NewSize          = 1310720 (1.25MB)
+   MaxNewSize       = 17592186044415 MB
+   OldSize          = 5439488 (5.1875MB)
+   NewRatio         = 2
+   SurvivorRatio    = 8
+   PermSize         = 21757952 (20.75MB)
+   MaxPermSize      = 85983232 (82.0MB)
+   G1HeapRegionSize = 0 (0.0MB)
+
+Heap Usage:
+PS Young Generation
+Eden Space:
+   capacity = 34603008 (33.0MB)
+   used     = 1384360 (1.3202285766601562MB)
+   free     = 33218648 (31.679771423339844MB)
+   4.000692656545928% used
+From Space:
+   capacity = 5242880 (5.0MB)
+   used     = 0 (0.0MB)
+   free     = 5242880 (5.0MB)
+   0.0% used
+To Space:
+   capacity = 5242880 (5.0MB)
+   used     = 0 (0.0MB)
+   free     = 5242880 (5.0MB)
+   0.0% used
+PS Old Generation
+   capacity = 89128960 (85.0MB)
+   used     = 0 (0.0MB)
+   free     = 89128960 (85.0MB)
+   0.0% used
+PS Perm Generation
+   capacity = 22020096 (21.0MB)
+   used     = 2647888 (2.5252227783203125MB)
+   free     = 19372208 (18.474777221679688MB)
+   12.024870372953869% used
+
+678 interned Strings occupying 44104 bytes.
+```
+
+#### histo
+
+1. [What kind of Java type is “\[B”?](https://stackoverflow.com/questions/4606864/what-kind-of-java-type-is-b)
+2. [JNI Types and Data Structures](https://docs.oracle.com/javase/7/docs/technotes/guides/jni/spec/types.html)
+
+```
+ num     #instances         #bytes  class name
+----------------------------------------------
+   1:             9        1661000  [I
+   2:          5914         762256  <methodKlass>
+   3:          5914         675200  <constMethodKlass>
+   4:           398         471016  <constantPoolKlass>
+   5:           362         286784  <constantPoolCacheKlass>
+   6:           398         274152  <instanceKlassKlass>
+   7:          1446         170352  [C
+   8:           719         126784  [B
+   9:           458          44848  java.lang.Class
+  10:           673          43768  [[I
+  11:           808          38784  java.nio.HeapCharBuffer
+  ...
+Total         20851        4725856
+```
+
+## [jstack](https://docs.oracle.com/javase/8/docs/technotes/tools/unix/jstack.html)
+
+>Prints `Java thread stack` traces for a Java process, core file, or remote debug server. This command is experimental and unsupported.
+
+### Synopsis
+
+- jstack [ options ] pid
+- jstack [ options ] executable core
+- jstack [ options ] [ server-id@ ] remote-hostname-or-IP
+
+### Description
+
+>The `jstack` command **prints Java stack traces of Java threads** for a specified Java process, core file, or remote debug server. 
+
+```
+2020-02-09 17:37:01
+Full thread dump Java HotSpot(TM) 64-Bit Server VM (24.80-b11 mixed mode):
+
+"Attach Listener" daemon prio=5 tid=0x00007fbd9a836800 nid=0xd07 waiting on condition [0x0000000000000000]
+   java.lang.Thread.State: RUNNABLE
+
+"Service Thread" daemon prio=5 tid=0x00007fbd9b02a000 nid=0x4303 runnable [0x0000000000000000]
+   java.lang.Thread.State: RUNNABLE
+
+"C2 CompilerThread1" daemon prio=5 tid=0x00007fbd9b029000 nid=0x4403 waiting on condition [0x0000000000000000]
+   java.lang.Thread.State: RUNNABLE
+
+"C2 CompilerThread0" daemon prio=5 tid=0x00007fbd9b014000 nid=0x4603 waiting on condition [0x0000000000000000]
+   java.lang.Thread.State: RUNNABLE
+
+"Signal Dispatcher" daemon prio=5 tid=0x00007fbd9b022000 nid=0x4803 runnable [0x0000000000000000]
+   java.lang.Thread.State: RUNNABLE
+
+"Finalizer" daemon prio=5 tid=0x00007fbd9a829800 nid=0x5003 in Object.wait() [0x0000700003172000]
+   java.lang.Thread.State: WAITING (on object monitor)
+	at java.lang.Object.wait(Native Method)
+	- waiting on <0x00000007d5504858> (a java.lang.ref.ReferenceQueue$Lock)
+	at java.lang.ref.ReferenceQueue.remove(ReferenceQueue.java:135)
+	- locked <0x00000007d5504858> (a java.lang.ref.ReferenceQueue$Lock)
+	at java.lang.ref.ReferenceQueue.remove(ReferenceQueue.java:151)
+	at java.lang.ref.Finalizer$FinalizerThread.run(Finalizer.java:209)
+
+"Reference Handler" daemon prio=5 tid=0x00007fbd9a829000 nid=0x5103 in Object.wait() [0x000070000306f000]
+   java.lang.Thread.State: WAITING (on object monitor)
+	at java.lang.Object.wait(Native Method)
+	- waiting on <0x00000007d5504470> (a java.lang.ref.Reference$Lock)
+	at java.lang.Object.wait(Object.java:503)
+	at java.lang.ref.Reference$ReferenceHandler.run(Reference.java:133)
+	- locked <0x00000007d5504470> (a java.lang.ref.Reference$Lock)
+
+"main" prio=5 tid=0x00007fbd9a806000 nid=0x2803 waiting on condition [0x0000700002a5d000]
+   java.lang.Thread.State: TIMED_WAITING (sleeping)
+	at java.lang.Thread.sleep(Native Method)
+	at Hello.main(Hello.java:10)
+
+"VM Thread" prio=5 tid=0x00007fbd9a826800 nid=0x5203 runnable 
+
+"GC task thread#0 (ParallelGC)" prio=5 tid=0x00007fbd99800800 nid=0x2007 runnable 
+
+"GC task thread#1 (ParallelGC)" prio=5 tid=0x00007fbd99805800 nid=0x2a03 runnable 
+
+"GC task thread#2 (ParallelGC)" prio=5 tid=0x00007fbd99806000 nid=0x2c03 runnable 
+
+"GC task thread#3 (ParallelGC)" prio=5 tid=0x00007fbd99806800 nid=0x5403 runnable 
+
+"VM Periodic Task Thread" prio=5 tid=0x00007fbd9b013800 nid=0x4203 waiting on condition 
+
+JNI global references: 108
+```
+
+## [jcmd](https://docs.oracle.com/javase/8/docs/technotes/guides/troubleshoot/tooldescr006.html)
+
+>The jcmd utility is used to send diagnostic command requests to the JVM, where these requests are useful for controlling Java Flight Recordings, troubleshoot, and diagnose JVM and Java Applications. It must be used on the same machine where the JVM is running, and have the same effective user and group identifiers that were used to launch the JVM.
+
+### Synopsis
+
+- jcmd [-l|-h|-help]
+- jcmd pid|main-class PerfCounter.print
+- jcmd pid|main-class -f filename
+- jcmd pid|main-class command[ arguments]
+
+### Description
+
+>To invoke diagnostic commands from a remote machine or with different identifiers, you can use the `com.sun.management.DiagnosticCommandMBean` interface. For more information about the DiagnosticCommandMBean interface, see the API documentation at http://docs.oracle.com/javase/8/docs/jre/api/management/extension/com/sun/management/DiagnosticCommandMBean.html
+
+- Perfcounter.print: Prints the **performance counters(总执行时间，存活的线程数等信息，不包含其他的信息)** available for the specified Java process. The list of performance counters might vary with the Java process.
+- **command [arguments]**: The command to be sent to the specified Java process. The list of available diagnostic commands for a given process can be obtained by sending the help command to this process. 
+
+### Usage
+
+```bash
+> jcmd
+5485 sun.tools.jcmd.JCmd
+2125 MyProgram
+ 
+> jcmd MyProgram help (or "jcmd 2125 help")
+2125:
+The following commands are available:
+JFR.stop
+JFR.start
+JFR.dump
+JFR.check
+VM.native_memory
+VM.check_commercial_features
+VM.unlock_commercial_features
+ManagementAgent.stop
+ManagementAgent.start_local
+ManagementAgent.start
+Thread.print
+GC.class_stats
+GC.class_histogram
+GC.heap_dump
+GC.run_finalization
+GC.run
+VM.uptime
+VM.flags
+VM.system_properties
+VM.command_line
+VM.version
+help
+ 
+> jcmd MyProgram help Thread.print
+2125:
+Thread.print
+Print all threads with stacktraces.
+ 
+Impact: Medium: Depends on the number of threads.
+ 
+Permission: java.lang.management.ManagementPermission(monitor)
+ 
+Syntax : Thread.print [options]
+ 
+Options: (options must be specified using the <key> or <key>=<value> syntax)
+        -l : [optional] print java.util.concurrent locks (BOOLEAN, false)
+ 
+> jcmd MyProgram Thread.print
+2125:
+2014-07-04 15:58:56
+Full thread dump Java HotSpot(TM) 64-Bit Server VM (25.0-b69 mixed mode):
+...
+```
+
+### options
+
+- Thread.print 等同于 `jstack`
+- GC.class_histogram 等同于 `jmap histo` 
