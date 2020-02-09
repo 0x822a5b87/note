@@ -1,0 +1,70 @@
+!_TAG_FILE_FORMAT	2	/extended format; --format=1 will not append ;" to lines/
+!_TAG_FILE_SORTED	1	/0=unsorted, 1=sorted, 2=foldcase/
+!_TAG_OUTPUT_MODE	u-ctags	/u-ctags or e-ctags/
+!_TAG_PROGRAM_AUTHOR	Universal Ctags Team	//
+!_TAG_PROGRAM_NAME	Universal Ctags	/Derived from Exuberant Ctags/
+!_TAG_PROGRAM_URL	https://ctags.io/	/official site/
+!_TAG_PROGRAM_VERSION	0.0.0	/0e5cfa3/
+A type of balanced 0-1 matrix	002/readme.md	/^### A type of balanced 0-1 matrix$/;"	S
+Bottom-up approach	002/readme.md	/^### Bottom-up approach$/;"	S
+Computer programming	001/readme.md	/^## Computer programming$/;"	s
+Computer programming	002/readme.md	/^## Computer programming$/;"	s
+Examples: Computer algorithms	002/readme.md	/^## Examples: Computer algorithms$/;"	s
+Optimal substructure Property in DP	001/readme.md	/^### Optimal substructure Property in DP$/;"	S
+Optimal_substructure	002/readme.md	/^### Optimal_substructure$/;"	S
+Overlapping sub-problems	002/readme.md	/^### Overlapping sub-problems$/;"	S
+Top-down approach	002/readme.md	/^### Top-down approach$/;"	S
+[Dynamic_programming](https://en.wikipedia.org/wiki/Dynamic_programming)	002/readme.md	/^# [Dynamic_programming](https:\/\/en.wikipedia.org\/wiki\/Dynamic_programming)$/;"	c
+backtracking	003/backtracing.md	/^# backtracking$/;"	c
+count_0_1_balanced_matrix	002/balanced_martix.c	/^int count_0_1_balanced_matrix(int n)$/;"	f	typeref:typename:int
+destroy	001/frog.c	/^void destroy()$/;"	f	typeref:typename:void
+divided and conquer	004/devided_and_conquer.md	/^# divided and conquer$/;"	c
+example	001/readme.md	/^## example$/;"	s
+frog	001/frog.c	/^int frog(size_t n)$/;"	f	typeref:typename:int
+frog	001/readme.md	/^### frog$/;"	S
+frog 优化	001/readme.md	/^### frog 优化$/;"	S
+frog2	001/frog.c	/^int frog2(size_t n)$/;"	f	typeref:typename:int
+frog2_cal_cnt	001/frog.c	/^size_t *frog2_cal_cnt;$/;"	v	typeref:typename:size_t *
+frog3	001/frog.c	/^int frog3(size_t n)$/;"	f	typeref:typename:int
+frog3_cal_cnt	001/frog.c	/^size_t *frog3_cal_cnt;$/;"	v	typeref:typename:size_t *
+frog4	001/frog.c	/^int frog4(size_t n)$/;"	f	typeref:typename:int
+frog_cal_cnt	001/frog.c	/^size_t *frog_cal_cnt;$/;"	v	typeref:typename:size_t *
+init	001/frog.c	/^void init(size_t n)$/;"	f	typeref:typename:void
+main	001/edit_distance.c	/^int main(int argc, char **argv)$/;"	f	typeref:typename:int
+main	001/frog.c	/^int main(int argc, char **argv)$/;"	f	typeref:typename:int
+main	001/min_sum_path.c	/^int main(int argc, char **argv)$/;"	f	typeref:typename:int
+main	001/robot.c	/^int main(int argc, char **argv)$/;"	f	typeref:typename:int
+main	002/balanced_martix.c	/^int main(int argc, char **argv)$/;"	f	typeref:typename:int
+min	001/edit_distance.c	/^int min(int x, int y)$/;"	f	typeref:typename:int
+min	001/min_sum_path.c	/^#define min(/;"	d	file:
+min sum path	001/readme.md	/^### min sum path$/;"	S
+min2	001/edit_distance.c	/^int min2(int x, int y, int z)$/;"	f	typeref:typename:int
+minDistance	001/edit_distance.c	/^int minDistance(char *word1, char *word2)$/;"	f	typeref:typename:int
+minPathSum	001/min_sum_path.c	/^int minPathSum(int **grid, int gridSize, int *gridColSize)$/;"	f	typeref:typename:int
+minPathSum1	001/min_sum_path.c	/^int minPathSum1(int **grid, int gridSize, int *gridColSize)$/;"	f	typeref:typename:int
+naive recursive	001/readme.md	/^#### naive recursive$/;"	t
+overlapping sub-problems	001/readme.md	/^### overlapping sub-problems$/;"	S
+prt_cnt	001/frog.c	/^void prt_cnt(size_t n)$/;"	f	typeref:typename:void
+robot	001/readme.md	/^### robot$/;"	S
+robot优化	001/readme.md	/^### robot优化$/;"	S
+robot优化代码实现	001/readme.md	/^#### robot优化代码实现$/;"	t
+transform_word	001/readme.md	/^### transform_word$/;"	S
+uniquePaths	001/robot.c	/^int uniquePaths(int m, int n)$/;"	f	typeref:typename:int
+uniquePathsOptimized	001/robot.c	/^int uniquePathsOptimized(int m, int n)$/;"	f	typeref:typename:int
+优化	001/readme.md	/^## 优化$/;"	s
+动态规划和递归的关系	001/readme.md	/^## 动态规划和递归的关系$/;"	s
+动态规划的三个步骤	001/readme.md	/^## 动态规划的三个步骤$/;"	s
+告别动态规划，连刷 40 道题，我总结了这些套路，看不懂你打我	001/readme.md	/^# 告别动态规划，连刷 40 道题，我总结了这些套路，看不懂你打我 $/;"	c
+定义数组元素的含义	001/readme.md	/^#### 定义数组元素的含义$/;"	t
+实现	001/readme.md	/^#### 实现$/;"	t
+思路	001/readme.md	/^#### 思路$/;"	t
+找出初始条件	001/readme.md	/^#### 找出初始条件$/;"	t
+找出数组元素间的关系式	001/readme.md	/^#### 找出数组元素间的关系式$/;"	t
+找到初始元素	001/readme.md	/^#### 找到初始元素$/;"	t
+未优化代码	001/readme.md	/^#### 未优化代码$/;"	t
+概述	001/readme.md	/^## 概述$/;"	s
+步骤一：定义数组的元素	001/readme.md	/^#### 步骤一：定义数组的元素$/;"	t
+步骤三：找出初始状态	001/readme.md	/^#### 步骤三：找出初始状态$/;"	t
+步骤二：找出状态转换	001/readme.md	/^#### 步骤二：找出状态转换$/;"	t
+目录	README.md	/^# 目录$/;"	c
+青蛙跳台阶：步骤一	001/readme.md	/^#### 青蛙跳台阶：步骤一$/;"	t
