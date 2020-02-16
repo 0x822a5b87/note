@@ -9,3 +9,4 @@
 7. Java 火焰图 - Java in Flames
 8. [Stacks and Recursion Elimination, and Queues](http://www.eecs.qmul.ac.uk/~mmh/DCS128/2006/resources/stacksrec.html)
 9. [Java 虚拟机底层原理知识总结](https://github.com/doocs/jvm)
+10. [从零开始的 JSON 库教程](https://zhuanlan.zhihu.com/json-tutorial)
