@@ -7,3 +7,5 @@
 5. [005 - jcmd, jstat, jmap, jhat, jstack]
 6. [Arthas - Java 线上问题定位处理的终极利器](https://blog.csdn.net/hollis_chuang/article/details/102994103)
 7. Java 火焰图 - Java in Flames
+8. [Stacks and Recursion Elimination, and Queues](http://www.eecs.qmul.ac.uk/~mmh/DCS128/2006/resources/stacksrec.html)
+9. [Java 虚拟机底层原理知识总结](https://github.com/doocs/jvm)
