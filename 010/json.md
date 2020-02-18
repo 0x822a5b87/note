@@ -126,3 +126,104 @@ int lept_parse(lept_value* v, const char* json) {
     return ret;
 }
 ```
+
+## tutorial02
+
+### JSON 数字语法
+
+```
+number = [ "-" ] int [ frac ] [ exp ]
+int = "0" / digit1-9 *digit
+frac = "." 1*digit
+exp = ("e" / "E") ["-" / "+"] 1*digit
+```
+
+number 是以十进制表示，它主要由 4 部分顺序组成：负号、整数、小数、指数。只有整数是必需部分。注意和直觉可能不同的是，正号是不合法的。
+
+整数部分如果是 0 开始，只能是单个 0；而由 1-9 开始的话，可以加任意数量的数字（0-9）。也就是说，0123 不是一个合法的 JSON 数字。
+
+小数部分比较直观，就是小数点后是一或多个数字（0-9）。
+
+JSON 可使用科学记数法，指数部分由大写 E 或小写 e 开始，然后可有正负号，之后是一或多个数字（0-9）。
+
+![number](number.png)
+
+### 总结
+
+1. 为什么要把一些测试代码以 `#if 0 ... #endif` 禁用？
+
+因为在做第 1 个练习题时，我希望能 100% 通过测试，方便做重构。另外，使用 #if 0 ... #endif 而不使用 /* ... */，是因为 C 的注释不支持嵌套（nested），而 #if ... #endif 是支持嵌套的。代码中已有注释时，用 #if 0 ... #endif 去禁用代码是一个常用技巧，而且可以把 0 改为 1 去恢复。
+
+---
+
+### **`个人总结`**
+
+- 字面值数组的长度是字符长度+1：`sizeof("true") == 5`
+- 在对数组进行 for 循环时可以使用如下技巧
+
+```c
+// 执行完之后 i 就是数组的长度
+size_t i;
+for (i = 0; literal[i]; ++i)
+{
+	// work
+}
+```
+
+#### 语法手写为校验规则
+
+![grammer](grammer.png)
+
+1. 整个图分为 1，2，3 三个状态，我们每次的目的是达到 end。如果不能达到 end 那么 valid 失败
+2. 要到达 `1`，我们可以通过两个途径，接受一个 `-` 或者 `""`
+3. 根据代码，我们每一个模块可以到达下一个状态。
+4. 在从一个状态到另外一个状态的过程中，可能还会有 `3 -> end` 这种比较复杂的状态变换，其实它相当于这个图的一个子模块。
+
+```c
+static int valid_number2(lept_context *c, char **end)
+{
+    const char *p = c->json;
+    if (*p == '-')
+        ++p;
+	// 到达状态1
+
+    if (*p == '0')
+    {
+        ++p;
+    }
+    else if (ISDIGIT1TO9(*p))
+    {
+        for (p++; ISDIGIT(*p); p++);
+    }
+    else
+    {
+        return LEPT_PARSE_INVALID_VALUE;
+    }
+	// 到达状态2
+
+    if (*p == '.')
+    {
+        p++;
+        if (!ISDIGIT(*p))
+            return LEPT_PARSE_INVALID_VALUE;
+        for (p++; ISDIGIT(*p); p++);
+    }
+	// 到达状态3
+
+    if (*p == 'e' || *p == 'E')
+    {
+        p++;
+        if (*p == '+' || *p == '-')
+        {
+            p++;
+        }
+        if (!ISDIGIT(*p))
+            return LEPT_PARSE_INVALID_VALUE;
+        for (p++; ISDIGIT(*p); p++){};
+    }
+	// 到达 end
+
+    *end = p;
+    return LEPT_PARSE_OK;
+}
+```
