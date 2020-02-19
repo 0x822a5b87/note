@@ -227,3 +227,219 @@ static int valid_number2(lept_context *c, char **end)
     return LEPT_PARSE_OK;
 }
 ```
+
+## tutorial03
+
+### JSON 字符串语法
+
+
+```
+string = quotation-mark *char quotation-mark
+char = unescaped /
+   escape (
+       %x22 /          ; "    quotation mark  U+0022
+       %x5C /          ; \    reverse solidus U+005C
+       %x2F /          ; /    solidus         U+002F
+       %x62 /          ; b    backspace       U+0008
+       %x66 /          ; f    form feed       U+000C
+       %x6E /          ; n    line feed       U+000A
+       %x72 /          ; r    carriage return U+000D
+       %x74 /          ; t    tab             U+0009
+       %x75 4HEXDIG )  ; uXXXX                U+XXXX
+escape = %x5C          ; \
+quotation-mark = %x22  ; "
+unescaped = %x20-21 / %x23-5B / %x5D-10FFFF
+```
+
+简单翻译一下，JSON 字符串是由前后两个双引号夹着零至多个字符。字符分为 `无转义字符` 或 `转义序列`。转义序列有 9 种，都是以反斜线开始，如常见的 \n 代表换行符。比较特殊的是 \uXXXX，当中 XXXX 为 16 进位的 UTF-16 编码，本单元将不处理这种转义序列，留待下回分解。
+
+### 2. 字符串表示
+
+- JSON 允许 '\0' 字符，例如 "Hello\u0000World"
+
+了解需求后，我们考虑实现。lept_value 事实上是一种变体类型（variant type），我们通过 type 来决定它现时是哪种类型，而这也决定了哪些成员是有效的。首先我们简单地在这个结构中加入两个成员：
+
+```c
+typedef struct {
+    char* s;
+    size_t len;
+    double n;
+    lept_type type;
+}lept_value;
+```
+
+然而我们知道，一个值不可能同时为数字和字符串，因此我们可使用 C 语言的 union 来节省内存：
+
+```c
+typedef struct {
+    union {
+        struct { char* s; size_t len; }s;  /* string */
+        double n;                          /* number */
+    }u;
+    lept_type type;
+}lept_value;
+```
+
+### 3. 内存管理
+
+由于字符串的长度不是固定的，我们要动态分配内存。为简单起见，我们使用标准库 `<stdlib.h>` 中的 `malloc()`、`realloc()` 和 `free()` 来分配／释放内存。
+
+```c
+void lept_set_string(lept_value* v, const char* s, size_t len) {
+    assert(v != NULL && (s != NULL || len == 0));
+    lept_free(v);
+    v->u.s.s = (char*)malloc(len + 1);
+    memcpy(v->u.s.s, s, len);
+    v->u.s.s[len] = '\0';
+    v->u.s.len = len;
+    v->type = LEPT_STRING;
+}
+```
+
+那么，再看看 lept_free()：
+
+```c
+void lept_free(lept_value* v) {
+    assert(v != NULL);
+    if (v->type == LEPT_STRING)
+        free(v->u.s.s);
+    v->type = LEPT_NULL;
+}
+```
+
+但也由于我们会检查 `v` 的类型，在调用所有访问函数之前，我们必须初始化该类型。所以我们加入 lept_init(v)，因非常简单我们用宏实现：
+
+```c
+#define lept_init(v) do { (v)->type = LEPT_NULL; } while(0)
+```
+
+用上 `do { ... } while(0)` 是为了把表达式转为语句，模仿无返回值的函数。
+
+其实在前两个单元中，我们只提供读取值的 API，没有写入的 API，就是因为写入时我们还要考虑释放内存。我们在本单元中把它们补全：
+
+```c
+#define lept_set_null(v) lept_free(v)
+
+int lept_get_boolean(const lept_value* v);
+void lept_set_boolean(lept_value* v, int b);
+
+double lept_get_number(const lept_value* v);
+void lept_set_number(lept_value* v, double n);
+
+const char* lept_get_string(const lept_value* v);
+size_t lept_get_string_length(const lept_value* v);
+void lept_set_string(lept_value* v, const char* s, size_t len);
+```
+
+### 4. 缓冲区与堆栈
+
+我们解析字符串（以及之后的数组、对象）时，需要把解析的结果先储存在一个临时的缓冲区，最后再用 lept_set_string() 把缓冲区的结果设进值之中。
+
+**如果每次解析字符串时，都重新建一个动态数组，那么是比较耗时的。我们可以重用这个动态数组，每次解析 JSON 时就只需要创建一个。** 而且我们将会发现，无论是解析字符串、数组或对象，我们也只需要以先进后出的方式访问这个动态数组。换句话说，我们需要一个动态的堆栈（stack）数据结构。
+
+我们把一个动态堆栈的数据放进 lept_context 里：
+
+```c
+typedef struct {
+    const char* json;
+    char* stack;
+    size_t size, top;
+}lept_context;
+```
+
+然后，我们实现堆栈的压入及弹出操作。和普通的堆栈不一样，我们这个堆栈是以字节储存的。每次可要求压入任意大小的数据，它会返回数据起始的指针（会 C++ 的同学可再参考[1]）：
+
+```c
+#ifndef LEPT_PARSE_STACK_INIT_SIZE
+#define LEPT_PARSE_STACK_INIT_SIZE 256
+#endif
+
+static void* lept_context_push(lept_context* c, size_t size) {
+    void* ret;
+    assert(size > 0);
+	// 如果超过栈的大小，就扩容
+    if (c->top + size >= c->size) {
+		// 初始化
+        if (c->size == 0)
+            c->size = LEPT_PARSE_STACK_INIT_SIZE;
+		// 计算新的 size
+        while (c->top + size >= c->size)
+            c->size += c->size >> 1;  /* c->size * 1.5 */
+
+		// realloc 复制数据到新的地址
+        c->stack = (char*)realloc(c->stack, c->size);
+    }
+
+	// 返缓冲区的地址，缓冲区提供的大小为 size(不是 c->size)
+    ret = c->stack + c->top;
+	// 修改栈指针，这是信任外部的操作的。
+	// 因为用户完全可以使用超过栈的空间
+    c->top += size;
+    return ret;
+}
+
+static void* lept_context_pop(lept_context* c, size_t size) {
+    assert(c->top >= size);
+    return c->stack + (c->top -= size);
+}
+```
+
+解析字符串
+
+```c
+static int lept_parse_string(lept_context* c, lept_value* v) {
+    size_t head = c->top, len;
+    const char* p;
+    EXPECT(c, '\"');
+    p = c->json;
+    for (;;) {
+        char ch = *p++;
+        switch (ch) {
+			// 遇到 " 就退出并计算长度，这里注意。
+			// 每次 PUTC 都会修改 c->top，那么结束是的 c->top - 开始时的 c->top 就是实际长度
+            case '\"':
+                len = c->top - head;
+                lept_set_string(v, (const char*)lept_context_pop(c, len), len);
+                c->json = p;
+                return LEPT_PARSE_OK;
+            case '\0':
+                c->top = head;
+                return LEPT_PARSE_MISS_QUOTATION_MARK;
+            default:
+                PUTC(c, ch);
+        }
+    }
+}
+```
+
+### 个人总结
+
+- 可以在 lept_value 中使用 `union` 来节省内存
+- 字符串必须存放在动态分配的空间中，我们使用 `malloc()` 和 `free()` 来管理内存，同时 `free()` 可以封装成 `lept_free()` 函数
+- 我们在解析字符串的时候：
+	- 我们可以直接分配某个 `size` 的堆空间，然后在空间不够的时候扩展这个堆，最后将 lept_value 指向这个堆上的数据。 **优点是，可以节省一次从缓存上拷贝数据到 `stack` 的开销，缺点是会浪费一些内存**
+	- 也可以和我们的例子中，在 `lept_context` 上分配一个缓存，所有的字符串都在这个缓存上读写，最后将数据从缓存上复制到 `stack` 上
+
+#### 解析 boolean 错误
+
+>这是开始的实现。因为 `v->type` 是一个枚举类型，所以 LEPT_TRUE 和 LEPT_FALSE 都不等于零。
+><br/>
+>后来我又实现为 `return v->type == LEPT_FALSE`，这会导致 v->type == LEPT_FALSE 时返回 1，从而返回完全相反的结果。
+
+```c
+int lept_get_boolean(const lept_value* v) {
+    assert(v != NULL);
+	// 错误的实现
+    return v->type;
+}
+
+void lept_set_boolean(lept_value* v, int b) {
+    assert(v != NULL);
+    v->type = ((b == 0) ? LEPT_FALSE : LEPT_TRUE);
+}
+```
+
+#### 性能优化的思考
+
+如果整个字符串都没有转义符，我们不就是把字符复制了两次？第一次是从 json 到 stack，第二次是从 stack 到 v->u.s.s。我们可以在 json 扫描 '\0'、'\"' 和 '\\' 3 个字符（ ch < 0x20 还是要检查），直至它们其中一个出现，才开始用现在的解析方法。这样做的话，前半没转义的部分可以只复制一次。缺点是，代码变得复杂一些，我们也不能使用 lept_set_string()。
+
