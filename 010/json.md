@@ -441,5 +441,315 @@ void lept_set_boolean(lept_value* v, int b) {
 
 #### 性能优化的思考
 
-如果整个字符串都没有转义符，我们不就是把字符复制了两次？第一次是从 json 到 stack，第二次是从 stack 到 v->u.s.s。我们可以在 json 扫描 '\0'、'\"' 和 '\\' 3 个字符（ ch < 0x20 还是要检查），直至它们其中一个出现，才开始用现在的解析方法。这样做的话，前半没转义的部分可以只复制一次。缺点是，代码变得复杂一些，我们也不能使用 lept_set_string()。
+如果整个字符串都没有转义符，我们不就是把字符复制了两次？第一次是从 json 到 stack，第二次是从 stack 到 v->u.s.s。我们可以在 json 扫描 '\0'、'\"' 和 '\\' 3 个字符（ ch < 0x20 还是要检查），直至它们其中一个出现，才开始用现在的解析方法。这样做的话，前半没转义的部分可以只复制一次。缺点是，代码变得复杂一些，我们也不能使用 lept_set_string()。>
 
+## tutorial04
+
+### 2. 需求
+
+对于 JSON字符串中的 `\uXXXX` 是以 16 进制表示码点 `U+0000` 至 `U+FFFF`，我们需要：
+
+1. 解析 4 位十六进制整数为码点；
+2. 由于字符串是以 UTF-8 存储，我们要把这个码点编码成 UTF-8。
+
+同学可能会发现， **4 位的 16 进制数字只能表示 0 至 0xFFFF，但之前我们说 UCS 的码点是从 0 至 0x10FFFF**，那怎么能表示多出来的码点？
+
+其实，U+0000 至 U+FFFF 这组 Unicode 字符称为 **基本多文种平面**（basic multilingual plane, BMP）， **还有另外 16 个平面。**
+
+那么 BMP 以外的字符，JSON 会使用代理对（surrogate pair）表示 **\uXXXX\uYYYY**。在 BMP 中，保留了 2048 个代理码点。如果第一个码点是 U+D800 至 U+DBFF，我们便知道它的代码对的高代理项（high surrogate），之后应该伴随一个 U+DC00 至 U+DFFF 的低代理项（low surrogate）。然后，我们用下列公式把代理对 (H, L) 变换成真实的码点：
+
+```
+codepoint = 0x10000 + (H − 0xD800) × 0x400 + (L − 0xDC00)
+```
+
+举个例子，高音谱号字符 `𝄞` → U+1D11E 不是 BMP 之内的字符。在 JSON 中可写成转义序列 \uD834\uDD1E，我们解析第一个 \uD834 得到码点 U+D834，我们发现它是 U+D800 至 U+DBFF 内的码点，所以它是高代理项。然后我们解析下一个转义序列 \uDD1E 得到码点 U+DD1E，它在 U+DC00 至 U+DFFF 之内，是合法的低代理项。我们计算其码点：
+
+```
+H = 0xD834, L = 0xDD1E
+codepoint = 0x10000 + (H − 0xD800) × 0x400 + (L − 0xDC00)
+          = 0x10000 + (0xD834 - 0xD800) × 0x400 + (0xDD1E − 0xDC00)
+          = 0x10000 + 0x34 × 0x400 + 0x11E
+          = 0x10000 + 0xD000 + 0x11E
+          = 0x1D11E
+```
+
+这样就得出这转义序列的码点，然后我们再把它编码成 UTF-8。如果只有高代理项而欠缺低代理项，或是低代理项不在合法码点范围，我们都返回 `LEPT_PARSE_INVALID_UNICODE_SURROGATE` 错误。如果 \u 后不是 4 位十六进位数字，则返回 `LEPT_PARSE_INVALID_UNICODE_HEX` 错误。
+
+>简单来讲，就是 Unicode 默认为基本字符序列，表示 [0x0000, 0xD800) U (0xDBFF, 0xFFFF]
+><br/>
+>如果 Unicode 解析到了 [0xDB00, 0xDBFF] 这个区间，那么就需要继续解析下一个 Unicode 字符，并根据公式计算结果
+
+### 3. UTF-8 编码
+
+**UTF-8 的编码单元为 8 位（1 字节），每个码点编码成 1 至 4 个字节**。它的编码方式很简单，按照码点的范围，把码点的二进位分拆成 1 至最多 4 个字节：
+
+| 码点范围           | 码点位数 | 字节1    | 字节2    | 字节3    | 字节4    |
+|--------------------|----------|----------|----------|----------|----------|
+| U+0000 ~ U+007F    | 7        | 0xxxxxxx |          |          |          |
+| U+0080 ~ U+07FF    | 11       | 110xxxxx | 10xxxxxx |          |          |
+| U+0800 ~ U+FFFF    | 16       | 1110xxxx | 10xxxxxx | 10xxxxxx |          |
+| U+10000 ~ U+10FFFF | 21       | 11110xxx | 10xxxxxx | 10xxxxxx | 10xxxxxx |
+
+>**简单来讲，就是用 `最高位` 来表示编码的字节数。如果最高位为 0，那么说明只占用一个字节，第七位用来表示 [0, 127] 这正好是对应 ASCII 的**
+><br/>
+>其次，如果高位为 `1` 开头，那么我们就需要读取 `1` 直到碰到一个 `0`。 `1` 的数量代码编码占用的字节数。
+><br/>
+>所有的编码字节都是 **从高位往低位读，当读到第一个 `0` 时，从这个 `0` 的下一位才是真正的编**
+
+### 总结
+
+>有同学可能觉得奇怪，最终也是写进一个 char，为什么要做 `x & 0xFF` 这种操作呢？这是因为 u 是 unsigned 类型，一些编译器可能会警告这个转型可能会截断数据。但实际上，配合了范围的检测然后右移之后，可以保证写入的是 0~255 内的值。为了避免一些编译器的警告误判，我们加上 x & 0xFF。一般来说，编译器在优化之后，这与操作是会被消去的，不会影响性能。
+
+## tutorial05
+
+### 1. JSON 数组
+
+```
+array = %x5B ws [ value *( ws %x2C ws value ) ] ws %x5D
+```
+
+- `%x5B` == `[`
+- `%x2C` == `,`
+- `%x5D` == `]`
+- `ws` == `white space`
+
+### 2. 数据结构
+
+JSON 数组存储零至多个元素，最简单就是使用 C 语言的数组。数组最大的好处是能以 $O(1)$ 用索引访问任意元素，次要好处是内存布局紧凑， **省内存之余还有高缓存一致性（cache coherence）** 。但数组的缺点是不能快速插入元素，而且我们在解析 JSON 数组的时候，还不知道应该分配多大的数组才合适。
+
+另一个选择是链表（linked list），它的最大优点是可快速地插入元素（开端、末端或中间），但需要以 $O(n)$ 时间去经索引取得内容。如果我们只需顺序遍历，那么是没有问题的。还有一个小缺点，就是相对数组而言，链表在存储每个元素时有额外内存开销（存储下一节点的指针），而且遍历时元素所在的内存可能不连续，令缓存不命中（cache miss）的机会上升。
+
+我见过一些 JSON 库选择了链表，而这里则选择了数组。我们将会通过之前在解析字符串时实现的堆栈，来解决解析 JSON 数组时未知数组大小的问题。
+
+```c
+typedef struct lept_value lept_value;
+
+struct lept_value {
+    union {
+        struct { lept_value* e; size_t size; }a; /* array */
+        struct { char* s; size_t len; }s;
+        double n;
+    }u;
+    lept_type type;
+};
+```
+
+>这里使用了指向自身类型的指针，因为根据 JSON 的数组定义，一个数组的元素可以是 JSON 的任意类型中的一种
+
+### 3. 解析过程
+
+**和字符串有点不一样，如果把 JSON 当作一棵树的数据结构，JSON 字符串是叶节点，而 JSON 数组是中间节点。**
+
+在整个解析过程中，我们不断的去重复：
+
+1. 碰到 `[` 只有进入 `parse_array`
+2. 解析碰到的任意对象，可能是 `array`, `string` 或者任意的 JSON 类型
+3. 如果是 `除了array` 之外的任意类型，我们就把读取到的数据缓存到 `stack` 上，并且在读取结束的时候，将 `stack` 上的对象弹出，并构造出 `array 的一个元素`。 **并将这个元素压到 `stack` 上**
+4. 如果是 `array`，回退到 `1`
+
+### 实现
+
+```c
+static int lept_parse_value(lept_context* c, lept_value* v);
+
+static int lept_parse_array(lept_context* c, lept_value* v) {
+    size_t size = 0, i;
+    int ret;
+    EXPECT(c, '[');
+    lept_parse_whitespace(c);
+    /* 碰到 ] 时退出解析 array，并将 array 的最后一个元素设置为 NULL */
+    /* 为什么要在这里增加一个判断，是因为 empty array 是一个特殊的结构 */
+    /* 它是一个数组，但是它的指针 v->u.a.e 不指向一个元素（这个元素也是数组的实际数据的首地址），而是指向 NULL */
+    if (*c->json == ']') {
+        c->json++;
+        v->type = LEPT_ARRAY;
+        v->u.a.size = 0;
+        v->u.a.e = NULL;
+        return LEPT_PARSE_OK;
+    }
+    for (;;)
+    {
+        lept_value e;
+        lept_parse_whitespace(c);
+        lept_init(&e);
+        /* 解析当前节点数据，可能是任意一个类型：array，string */
+        /* 我们在结构体中存储的只是一个指针和基本类型，实际的数据（string， array）都存放在 stack 上 */
+        if ((ret = lept_parse_value(c, &e)) != LEPT_PARSE_OK)
+        {
+            break;
+        }
+        /* 将解析的第一个元素压栈 */
+        memcpy(lept_context_push(c, sizeof(lept_value)), &e, sizeof(lept_value));
+        size++;
+        lept_parse_whitespace(c);
+        if (*c->json == ',')
+            c->json++;
+        else if (*c->json == ']') {
+            c->json++;
+            v->type = LEPT_ARRAY;
+            v->u.a.size = size;
+            size *= sizeof(lept_value);
+            /* 注意，这里我们有一个非常重要的点：我们存储的数据结构是一个数组。
+             * 所以我们的 lept_value 中并不需要一个指针 lept_value *next 来指向下一个元素
+             * 内存模型应该为：
+             *
+             * lept_value1|lept_value2|...
+             *
+             * 对于 ["hello", [1,2], true] 这个 JSON 的内存应该为：
+             *
+             *     ['h', 'e', 'l', 'l', 'o', '\0']
+             *     |
+             *     |
+             * lept_value_ptr:size_t:string|lept_value_ptr:size_t:array|nothing:true
+             *                                  |
+             *                                  |
+             *                                  [1, 2]
+             */
+            memcpy(v->u.a.e = (lept_value*)malloc(size), lept_context_pop(c, size), size);
+            return LEPT_PARSE_OK;
+        }
+        else {
+            ret = LEPT_PARSE_MISS_COMMA_OR_SQUARE_BRACKET;
+            break;
+        }
+    }
+
+    /* 必须注意，我们在解析异常的时候，必须释放所有的内存 */
+    for (i = 0; i < size; i++)
+        lept_free((lept_value*)lept_context_pop(c, sizeof(lept_value)));
+    return ret;
+}
+
+static int lept_parse_value(lept_context* c, lept_value* v) {
+    switch (*c->json) {
+        case 't':  return lept_parse_literal(c, v, "true", LEPT_TRUE);
+        case 'f':  return lept_parse_literal(c, v, "false", LEPT_FALSE);
+        case 'n':  return lept_parse_literal(c, v, "null", LEPT_NULL);
+        default:   return lept_parse_number(c, v);
+        case '"':  return lept_parse_string(c, v);
+        case '[':  return lept_parse_array(c, v);
+        case '\0': return LEPT_PARSE_EXPECT_VALUE;
+    }
+}
+```
+
+### 5. bug 的解释
+
+**这个 bug 源于压栈时，会获得一个指针 e，指向从堆栈分配到的空间。`所有返回一个指针或者一个在堆上对象的引用都必须考虑一个问题：对象的生命周期`。在这个例子中，我们返回一个指向堆上的指针，而后续的调用中会使用到这个堆上的 `stack`。然而，这个 `stack` 可能会被 `realloc` 修改，这个时候会导致之前返回的一个指针指向一个错误的位置**
+
+```c
+    for (;;) {
+        /* bug! */
+        lept_value* e = lept_context_push(c, sizeof(lept_value));
+        lept_init(e);
+        size++;
+        if ((ret = lept_parse_value(c, e)) != LEPT_PARSE_OK)
+            return ret;
+        /* ... */
+    }
+```
+
+然后，我们把这个指针调用 lept_parse_value(c, e)，这里会出现问题，因为 lept_parse_value() 及之下的函数都需要调用 lept_context_push()，而 lept_context_push() 在发现栈满了的时候会用 realloc() 扩容。这时候，我们上层的 e 就会失效，变成一个悬挂指针（dangling pointer），而且 lept_parse_value(c, e) 会通过这个指针写入解析结果，造成非法访问。
+
+**在使用 C++ 容器时，也会遇到类似的问题。从容器中取得的迭代器（iterator）后，如果改动容器内容，之前的迭代器会失效。这里的悬挂指针问题也是相同的。**
+
+也可以将 `lept_context_push()` 的 API 修改为：
+
+```c
+static void lept_context_push(lept_context* c, const void* data, size_t size);
+```
+
+## tutorial06
+
+### 1. JSON 对象
+
+```
+member = string ws %x3A ws value
+object = %x7B ws [ member *( ws %x2C ws member ) ] ws %x7D
+```
+
+- `%x7B` == `{`
+- `%x7D` == `}`
+- `%x3A` == `:`
+- `value` == 任何 JSON 对象
+- `object` 由 member 数组组成
+
+### 总结
+
+#### lept_parse_string 重构
+
+1. 在我个人重构的版本中，我在 `lept_parse_string_raw` 中解析了字符串， **并且把 `stack` 上的字符串拷贝到了 `heap` 上，并返回指向 `heap` 的指针**
+2. 在 `lept_parse_string` 中，我也没有调用 `lept_set_string` 而是手动的去给 `lept_value` 赋值。
+3. 主要是因为，我不希望返回一个指向 `lept_context` 内部的 `stack` 的指针，这可能带来一定的危险。
+
+```c
+static int lept_parse_string_raw(lept_context* c, char **str, size_t *len) {
+    size_t head = c->top;
+    unsigned u, u2;
+    const char* p;
+    EXPECT(c, '\"');
+    p = c->json;
+    for (;;) {
+        char ch = *p++;
+        switch (ch) {
+            case '\"':
+                *len = c->top - head;
+                *str = (char *) (malloc(*len + 1));
+                memcpy(*str, (const char*)lept_context_pop(c, *len), *len);
+                *(*str + *len) = '\0';
+                c->json = p;
+                return LEPT_PARSE_OK;
+            case '\\':
+                switch (*p++) {
+                    case '\"': PUTC(c, '\"'); break;
+                    case '\\': PUTC(c, '\\'); break;
+                    case '/':  PUTC(c, '/' ); break;
+                    case 'b':  PUTC(c, '\b'); break;
+                    case 'f':  PUTC(c, '\f'); break;
+                    case 'n':  PUTC(c, '\n'); break;
+                    case 'r':  PUTC(c, '\r'); break;
+                    case 't':  PUTC(c, '\t'); break;
+                    case 'u':
+                        if (!(p = lept_parse_hex4(p, &u)))
+                            STRING_ERROR(LEPT_PARSE_INVALID_UNICODE_HEX);
+                        if (u >= 0xD800 && u <= 0xDBFF) { /* surrogate pair */
+                            if (*p++ != '\\')
+                                STRING_ERROR(LEPT_PARSE_INVALID_UNICODE_SURROGATE);
+                            if (*p++ != 'u')
+                                STRING_ERROR(LEPT_PARSE_INVALID_UNICODE_SURROGATE);
+                            if (!(p = lept_parse_hex4(p, &u2)))
+                                STRING_ERROR(LEPT_PARSE_INVALID_UNICODE_HEX);
+                            if (u2 < 0xDC00 || u2 > 0xDFFF)
+                                STRING_ERROR(LEPT_PARSE_INVALID_UNICODE_SURROGATE);
+                            u = (((u - 0xD800) << 10) | (u2 - 0xDC00)) + 0x10000;
+                        }
+                        lept_encode_utf8(c, u);
+                        break;
+                    default:
+                        STRING_ERROR(LEPT_PARSE_INVALID_STRING_ESCAPE);
+                }
+                break;
+            case '\0':
+                STRING_ERROR(LEPT_PARSE_MISS_QUOTATION_MARK);
+            default:
+                if ((unsigned char)ch < 0x20)
+                    STRING_ERROR(LEPT_PARSE_INVALID_STRING_CHAR);
+                PUTC(c, ch);
+        }
+    }
+}
+
+static int lept_parse_string(lept_context* c, lept_value* v) {
+    char *str;
+    size_t len;
+    int ret;
+    if ((ret = lept_parse_string_raw(c, &str, &len)) != LEPT_PARSE_OK)
+        return ret;
+
+    v->u.s.s = str;
+    v->u.s.len = len;
+    v->type = LEPT_STRING;
+    return LEPT_PARSE_OK;
+}
+
+```
