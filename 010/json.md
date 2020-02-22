@@ -873,3 +873,86 @@ static void* lept_context_push(lept_context* c, size_t size) {
 所以，一个优化的点子是，预先分配足够的内存，每次加入字符就不用做这个检查了。但多大的内存才足够呢？我们可以看到，每个字符可生成最长的形式是 \u00XX，占 6 个字符，再加上前后两个双引号，也就是共 len * 6 + 2 个输出字符。那么，使用 char* p = lept_context_push() 作一次分配后，便可以用 *p++ = c 去输出字符了。最后，再按实际输出量调整堆栈指针。
 
 **但是相对来讲，会浪费一些额外的空间。**
+
+## tutorial08
+
+### 3. 复制、移动与交换
+
+本单元的重点，在于修改数组和对象的内容。我们将会实现一些接口做修改的操作，例如，为对象设置一个键值，我们可能会这么设计：
+
+```c
+void lept_set_object_value(lept_value* v, const char* key, size_t klen, const lept_value* value);
+
+void f() {
+    lept_value v, s;
+    lept_init(&v);
+    lept_parse(&v, "{}");
+    lept_init(&s);
+    lept_set_string(&s, "Hello", 5);
+    lept_set_object_keyvalue(&v, "s", &s); /* {"s":"Hello"} */
+    lept_free(&v)
+    lept_free(&s);  /* 第二次释放！*/
+}
+```
+
+凡涉及赋值，都可能会引起资源拥有权（resource ownership）的问题。值 s 并不能以指针方式简单地写入对象 v，因为这样便会有两个地方都拥有 s，会做成重复释放的 bug。我们有两个选择：
+
+1. 在 **lept_set_object_value()** 中，把参数 value **深度复制（deep copy）**一个值，即把整个树复制一份，写入其新增的键值对中。
+2. 在 **lept_set_object_value()** 中， **把参数 value 拥有权转移至新增的键值对**，再把 value 设置成 null 值。这就是所谓的 `移动语意（move semantics）`。
+
+`深度复制` 是一个常用功能，使用者也可能会用到，例如把一个 JSON 复制一个版本出来修改，保持原来的不变。所以，我们实现一个公开的深度复制函数：
+
+```c
+void lept_copy(lept_value* dst, const lept_value* src) {
+    size_t i;
+    assert(src != NULL && dst != NULL && src != dst);
+    switch (src->type) {
+        case LEPT_STRING:
+            lept_set_string(dst, src->u.s.s, src->u.s.len);
+            break;
+        case LEPT_ARRAY:
+            /* \todo */
+            break;
+        case LEPT_OBJECT:
+            /* \todo */
+            break;
+        default:
+            lept_free(dst);
+            memcpy(dst, src, sizeof(lept_value));
+            break;
+    }
+}
+```
+
+
+C++11 加入了右值引用的功能，可以从语言层面区分复制和移动语意。而在 C 语言中，我们也可以通过实现不同版本的接口（不同名字的函数），实现这两种语意。但为了令接口更简单和正交（orthgonal），我们修改了 `lept_set_object_value()` 的设计，让它返回新增键值对的值指针，所以我们可以用 lept_copy() 去复制赋值，也可以简单地改变新增的键值：
+
+```c
+/* 返回新增键值对的指针 */
+lept_value* lept_set_object_value(lept_value* v, const char* key, size_t klen);
+
+void f() {
+    lept_value v;
+    lept_init(&v);
+    lept_parse(&v, "{}");
+    lept_set_string(lept_set_object_value(&v, "s"), "Hello", 5);
+    /* {"s":"Hello"} */
+    lept_copy(
+        lept_add_object_keyvalue(&v, "t"),
+        lept_get_object_keyvalue(&v, "s", 1));
+    /* {"s":"Hello","t":"Hello"} */
+    lept_free(&v);
+}
+```
+
+我们还提供了 `lept_move()`，它的实现也非常简单：
+
+```c
+void lept_move(lept_value* dst, lept_value* src) {
+    assert(dst != NULL && src != NULL && src != dst);
+    lept_free(dst);
+    memcpy(dst, src, sizeof(lept_value));
+	/* 注意，这里是 init 而不是 free */
+    lept_init(src);
+}
+```
