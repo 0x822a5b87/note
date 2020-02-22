@@ -753,3 +753,123 @@ static int lept_parse_string(lept_context* c, lept_value* v) {
 }
 
 ```
+
+## tutorial07
+
+```c
+/* 如果 s 过长，可能会导致 lept_context 多次的扩容 */
+static void lept_stringify_string(lept_context* c, const char* s, size_t len) {
+    size_t i;
+    char ch;
+    PUTC(c, '"');
+    for (i = 0; i < len; ++i)
+    {
+        ch = s[i];
+        /* 如果是特殊字符就需要编码 */
+        switch (ch)
+        {
+			case '\"': PUTS(c, "\\\"", 2); break;
+			case '\\': PUTS(c, "\\\\", 2); break;
+			/* \ 的转义是可选的，读的时候 \/ 和 / 都是 /，输出的时候直接输出 / 即可 */
+			/*case '/':  PUTS(c, "\\/", 2); break;*/
+			case '\b': PUTS(c, "\\b", 2); break;
+			case '\f': PUTS(c, "\\f", 2); break;
+            case '\n': PUTS(c, "\\n", 2); break;
+			case '\r': PUTS(c, "\\r", 2); break;
+			case '\t': PUTS(c, "\\t", 2); break;
+			default:
+				if (ch < 0x20u) {
+					char buffer[7];
+					sprintf(buffer, "\\u%04X", ch);
+					PUTS(c, buffer, 6);
+				}
+				else if (ch < 0x80u)
+					PUTC(c, ch);
+        }
+    }
+    PUTC(c, '"');
+}
+
+static void lept_stringify_value(lept_context* c, const lept_value* v);
+
+static void lept_stringify_array(lept_context* c, const lept_value *v) {
+	size_t i;
+	assert(v != NULL && v->type == LEPT_ARRAY);
+	PUTC(c, '[');
+	for (i = 0; i < v->u.a.size; ++i)
+	{
+		lept_value va = v->u.a.e[i];
+		lept_stringify_value(c, &va);
+		/* 这种最后一次不需要输出的可以有一个比较简单的优化 */
+		if (i != v->u.a.size - 1)
+		{
+			PUTC(c, ',');
+		}
+	}
+
+	/*
+	for (i = 0; i < v->u.o.size; i++) {
+		if (i > 0)
+			PUTC(c, ',');
+	}
+	 */
+	PUTC(c, ']');
+}
+
+static void lept_stringify_object(lept_context *c, const lept_value *v)
+{
+	size_t i, len;
+	lept_member *p;
+	assert(v != NULL && v->type == LEPT_OBJECT);
+	PUTC(c, '{');
+	len = v->u.o.size;
+	p = v->u.o.m;
+	for (i = 0; i < len; ++i)
+	{
+		lept_stringify_string(c, p[i].k, p[i].klen);
+		PUTC(c, ':');
+		lept_stringify_value(c, &p[i].v);
+		if (i != len - 1)
+			PUTC(c, ',');
+	}
+	PUTC(c, '}');
+}
+
+static void lept_stringify_value(lept_context* c, const lept_value* v) {
+    switch (v->type) {
+        case LEPT_NULL:   PUTS(c, "null",  4); break;
+        case LEPT_FALSE:  PUTS(c, "false", 5); break;
+        case LEPT_TRUE:   PUTS(c, "true",  4); break;
+        case LEPT_NUMBER: c->top -= 32 - sprintf(lept_context_push(c, 32), "%.17g", v->u.n); break;
+        case LEPT_STRING: lept_stringify_string(c, v->u.s.s, v->u.s.len); break;
+        case LEPT_ARRAY:  lept_stringify_array(c, v); break;
+        case LEPT_OBJECT: lept_stringify_object(c, v); break;
+        default: assert(0 && "inalid type");
+    }
+}
+```
+
+### 3. 优化 lept_stringify_string()
+
+```c
+static void* lept_context_push(lept_context* c, size_t size) {
+    void* ret;
+    assert(size > 0);
+    if (c->top + size >= c->size) { // (1)
+        if (c->size == 0)
+            c->size = LEPT_PARSE_STACK_INIT_SIZE;
+        while (c->top + size >= c->size)
+            c->size += c->size >> 1;  /* c->size * 1.5 */
+        c->stack = (char*)realloc(c->stack, c->size);
+    }
+    ret = c->stack + c->top;       // (2)
+    c->top += size;                // (3)
+    return ret;                    // (4)
+}
+```
+
+1. 中间最花费时间的， **应该会是 (1)，需要计算而且作分支检查**。即使使用 C99 的 inline 关键字（或使用宏）去减少函数调用的开销，这个分支也无法避免。
+
+所以，一个优化的点子是，预先分配足够的内存，每次加入字符就不用做这个检查了。但多大的内存才足够呢？我们可以看到，每个字符可生成最长的形式是 \u00XX，占 6 个字符，再加上前后两个双引号，也就是共 len * 6 + 2 个输出字符。那么，使用 char* p = lept_context_push() 作一次分配后，便可以用 *p++ = c 去输出字符了。最后，再按实际输出量调整堆栈指针。
+
+**但是相对来讲，会浪费一些额外的空间。**
