@@ -1,0 +1,4 @@
+/Users/dhy/code/hangyudu/note/011/Demo5/bin/Demo
+/tmp/include/config.h
+/tmp/bin/libMathFunctions.a
+/tmp/include/MathFunctions.h

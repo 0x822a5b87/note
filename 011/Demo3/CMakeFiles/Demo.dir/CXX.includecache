@@ -1,0 +1,18 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/Users/dhy/code/hangyudu/note/011/Demo3/main.cc
+stdio.h
+-
+stdlib.h
+-
+math/MathFunctions.h
+/Users/dhy/code/hangyudu/note/011/Demo3/math/MathFunctions.h
+
+/Users/dhy/code/hangyudu/note/011/Demo3/math/MathFunctions.h
+

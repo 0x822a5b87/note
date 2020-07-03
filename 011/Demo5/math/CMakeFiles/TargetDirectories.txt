@@ -1,0 +1,7 @@
+/Users/dhy/code/hangyudu/note/011/Demo5/math/CMakeFiles/install/local.dir
+/Users/dhy/code/hangyudu/note/011/Demo5/math/CMakeFiles/rebuild_cache.dir
+/Users/dhy/code/hangyudu/note/011/Demo5/math/CMakeFiles/edit_cache.dir
+/Users/dhy/code/hangyudu/note/011/Demo5/math/CMakeFiles/install/strip.dir
+/Users/dhy/code/hangyudu/note/011/Demo5/math/CMakeFiles/install.dir
+/Users/dhy/code/hangyudu/note/011/Demo5/math/CMakeFiles/list_install_components.dir
+/Users/dhy/code/hangyudu/note/011/Demo5/math/CMakeFiles/MathFunctions.dir
