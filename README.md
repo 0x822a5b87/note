@@ -13,3 +13,4 @@
 11. [CMake 入门实战](https://www.hahack.com/codes/cmake/#)
 12. GDB 调试入门
 13. [Backtracking](https://www.geeksforgeeks.org/backtracking-introduction/)
+14. [『浅入深出』MySQL 中事务的实现](https://draveness.me/mysql-transaction/)
