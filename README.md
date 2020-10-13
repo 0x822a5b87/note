@@ -14,3 +14,5 @@
 12. GDB 调试入门
 13. [Backtracking](https://www.geeksforgeeks.org/backtracking-introduction/)
 14. [『浅入深出』MySQL 中事务的实现](https://draveness.me/mysql-transaction/)
+15. [Trident API Overviewl](http://storm.apache.org/releases/current/Trident-API-Overview.html)
+16. 进程、线程以及协程
