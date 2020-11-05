@@ -16,3 +16,4 @@
 14. [『浅入深出』MySQL 中事务的实现](https://draveness.me/mysql-transaction/)
 15. [Trident API Overviewl](http://storm.apache.org/releases/current/Trident-API-Overview.html)
 16. 进程、线程以及协程
+17. [实时处理中的"exactly once"方案具体的应用场景或者使用方法是什么？](https://www.zhihu.com/question/63941629)
