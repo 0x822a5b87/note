@@ -4,6 +4,7 @@
 - [类加载的时机](https://github.com/doocs/jvm/blob/main/docs/08-load-class-time.md)
 - [类加载的过程](https://github.com/doocs/jvm/blob/main/docs/09-load-class-process.md)
 - [类加载器](https://github.com/doocs/jvm/blob/main/docs/10-class-loader.md)
+- [Java中的类加载器](https://blog.csdn.net/zhangjg_blog/article/details/16102131)
 
 ## 类文件结构
 
@@ -164,3 +165,39 @@ public class TestStatic {
 像 `java.lang.Object` 这些存放在 `rt.jar` 中的类， **无论使用哪个类加载器加载，最终都会委派给最顶端的启动类加载器加载，从而使得不同加载器加载的 Object 类都是同一个。**
 
 相反，如果没有使用双亲委派模型，由各个类加载器自行去加载的话，如果用户自己编写了一个称为 java.lang.Object 的类，并放在 classpath 下，那么系统将会出现多个不同的 Object 类，Java 类型体系中最基础的行为也就无法保证。
+
+## Java中的类加载器
+
+### 类加载器的三个特性
+
+类加载器有三个特性，分别为 **委派** ， **可见性和单一性**，其他文章上对这三个特性的介绍如下：
+
+- 委托机制是指将加载一个类的请求交给父类加载器，如果这个父类加载器不能够找到或者加载这个类，那么再加载它。
+- 可见性的原理是子类的加载器可以看见所有的父类加载器加载的类，而父类加载器看不到子类加载器加载的类。
+- 单一性原理是指仅加载一个类一次，这是由委托机制确保子类加载器不会再次加载父类加载器加载过的类。
+
+### 系统类加载器和线程上下文类加载器
+
+```java
+public class TestClassLoader {
+
+    public static void main(String[] args) {
+		// 线程类加载器
+        ClassLoader threadClassLoader = Thread.currentThread().getContextClassLoader();
+        ClassLoader classClassLoader = TestClassLoader.class.getClassLoader();
+		// 系统类加载器
+        ClassLoader systemClassLoader = ClassLoader.getSystemClassLoader();
+
+        System.out.println(threadClassLoader);
+        System.out.println(classClassLoader);
+        System.out.println(systemClassLoader);
+
+        assert threadClassLoader == classClassLoader;
+        assert classClassLoader == systemClassLoader;
+    }
+
+}
+
+```
+
+每个 `线程` **都会有一个上下文类加载器** ,由于在线程执行时加载用到的类,默认情况下是父线程的上下文类加载器, 也就是AppClassLoader。
