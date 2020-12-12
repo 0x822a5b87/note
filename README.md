@@ -19,3 +19,4 @@
 17. [实时处理中的"exactly once"方案具体的应用场景或者使用方法是什么？](https://www.zhihu.com/question/63941629)
 18. Storm & Flink反压机制分析
 19. Java 类加载器
+20. [互斥锁、自旋锁、读写锁、悲观锁、乐观锁的应用场景](https://zhuanlan.zhihu.com/p/246114725)
