@@ -11,7 +11,7 @@
 9. [Java 虚拟机底层原理知识总结](https://github.com/doocs/jvm)
 10. [从零开始的 JSON 库教程](https://zhuanlan.zhihu.com/json-tutorial)
 11. [CMake 入门实战](https://www.hahack.com/codes/cmake/#)
-12. GDB 调试入门w
+12. GDB 调试入门
 13. [Backtracking](https://www.geeksforgeeks.org/backtracking-introduction/)
 14. [『浅入深出』MySQL 中事务的实现](https://draveness.me/mysql-transaction/)
 15. [Trident API Overviewl](http://storm.apache.org/releases/current/Trident-API-Overview.html)
@@ -20,3 +20,5 @@
 18. Storm & Flink反压机制分析
 19. Java 类加载器
 20. [互斥锁、自旋锁、读写锁、悲观锁、乐观锁的应用场景](https://zhuanlan.zhihu.com/p/246114725)
+21. [prometheus-book](https://yunlzheng.gitbook.io/prometheus-book/)
+22. 一致性问题
