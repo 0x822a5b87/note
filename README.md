@@ -22,3 +22,6 @@
 20. [互斥锁、自旋锁、读写锁、悲观锁、乐观锁的应用场景](https://zhuanlan.zhihu.com/p/246114725)
 21. [prometheus-book](https://yunlzheng.gitbook.io/prometheus-book/)
 22. 一致性问题
+23. [TODO] LSM-tree
+24. [TiDB in Action](https://book.tidb.io/)
+25. 分布式系统理论基础 - 一致性、2PC和3PC
