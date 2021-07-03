@@ -480,7 +480,7 @@ TiDB 基于 Google [Percolator](https://storage.googleapis.com/pub-tools-public-
 Percolator 使用多版本并发控制（MVCC）来实现快照隔离级别，与可重复读的区别在于**整个事务是在一个一致的快照上执行**。TiDB 使用 [PD](https://github.com/pingcap/pd) 作为全局授时服务（TSO）来提供单调递增的版本号：
 
 - 事务开始时获取 start timestamp，也是快照的版本号；事务提交时获取 commit timestamp，同时也是数据的版本号
-- 事务开始时获取 start timestamp，也是快照的版本号；事务提交时获取 commit timestamp，同时也是数据的版本号
+- 事务只能读到在事务 start timestamp 之前最新已提交的数据
 - 事务在提交时会根据 timestamp 来检测数据冲突
 
 ###### 6.1.2.2 两阶段提交（2PC）
