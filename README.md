@@ -25,3 +25,4 @@
 23. [TODO] LSM-tree
 24. [TiDB in Action](https://book.tidb.io/)
 25. 分布式系统理论基础 - 一致性、2PC和3PC
+26. TiDB 事务
