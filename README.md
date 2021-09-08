@@ -26,3 +26,4 @@
 24. [TiDB in Action](https://book.tidb.io/)
 25. 分布式系统理论基础 - 一致性、2PC和3PC
 26. TiDB 事务
+27. [neo4j入门](https://www.w3cschool.cn/neo4j/)

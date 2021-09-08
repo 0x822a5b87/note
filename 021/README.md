@@ -122,7 +122,7 @@ time-series是按照时间戳和值的序列顺序存放的，我们称之为向
 
 在time-series中的每一个 `点` 称为一个 `样本`（sample），样本由以下三部分组成：
 
-- `指标(metric)`：metric name和描述当前样本特征的labelsets;
+- `指标(metric)`：metric name和描述当前样本特征的label sets;
 - `时间戳(timestamp)`：一个精确到毫秒的时间戳;
 - `样本值(value)`： 一个float64的浮点型数据表示当前样本的值。
 
