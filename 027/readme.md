@@ -2145,11 +2145,175 @@ return *
 
 ```
 
+### order by
 
+> `ORDER BY` is a sub-clause following `RETURN` or `WITH`, and it specifies that the output should be sorted and how.
+>
+> 
+>
+> **Note that you cannot sort on nodes or relationships, just on properties on these.**
 
+### skip
 
+> `SKIP` defines from which row to start including the rows in the output.
 
+### limit
 
+> `LIMIT` constrains the number of returned rows.
+
+### CREATE
+
+> The `CREATE` clause is used to create nodes and relationships.
+
+#### 1.4. Create a node with multiple labels
+
+```sql
+CREATE (n:Person:Swedish)
+```
+
+#### 1.5 create node and add labels and properties
+
+```sql
+create (n:Person:Tencent{name:"hangyudu", job:"software"})
+```
+
+#### 2.1 create a relationship between two nodes
+
+```sql
+match
+    (a:Person),
+    (b:Person)
+where a.name = 'A' and b.name = 'B'
+create (a)-[r:RELTYPE]->(b)
+return type(r)
+```
+
+#### 2.2 create relationship and set properties
+
+```sql
+match
+    (a:Person),
+    (b:Person)
+where a.name = 'A' and b.name = 'B'
+create (a)-[r:RELTYPE{name: a.name + "<->" + b.name}]->(b)
+return type(r)
+```
+
+#### 3. create a full path
+
+```sql
+CREATE p = (andy {name:'Andy'})-[:WORKS_AT]->(neo)<-[:WORKS_AT]-(michael {name: 'Michael'})
+RETURN p
+```
+
+### set
+
+> The `SET` clause is used to update labels on nodes and properties on nodes and relationships.
+
+#### set properties
+
+```sql
+match (n {name: "Andy"})
+set (case when n.age = 36 then n end).worksIn = 'Malmo'
+return n.name, n.worksIn
+```
+
+```sql
+# 先清空数据
+match (a:Person{name:"A"})-[r]-() delete r
+match (a:Person{name:"B"}) delete a
+match (a:Person{name:"A"}) delete a
+
+create (a:Person{name: "A", age: 30})
+create (a:Person{name: "B", age: 20, from: "China"})
+
+# = 会用后面的覆盖前面的
+match (person:Person{name: "A", age: 30}) set person = {name:"B", age: 40, from: "China"}
+```
+
+> 记得清空数据
+
+```sql
+# += 会执行
+match (person:Person{name:"A"}) set person += {age:100, job: "software"}
+```
+
+The property mutation operator `+=` can be used with `SET` to mutate properties from a map in a fine-grained fashion:
+
+- Any properties in the map that are not on the node or relationship will be *added*.
+- Any properties not in the map that are on the node or relationship will be left as is.
+- Any properties that are in both the map and the node or relationship will be *replaced* in the node or relationship. However, if any property in the map is `null`, it will be *removed* from the node or relationship.
+
+### remove
+
+#### remove a label from a node
+
+```sql
+MATCH (n {name: 'Peter'})
+REMOVE n:German
+RETURN n.name, labels(n)
+
+# remove multiple label from a node
+MATCH (n {name: 'Peter'})
+REMOVE n:German:Swedish
+RETURN n.name, labels(n)
+```
+
+### foreach
+
+> The `FOREACH` clause is used to update data within a collection whether components of a path, or result of aggregation.
+
+```sql
+MATCH p=(start)-[*]->(finish)
+WHERE start.name = 'A' AND finish.name = 'D'
+FOREACH (n IN nodes(p) | SET n.marked = true)
+```
+
+### merge
+
+> The `MERGE` clause ensures that a pattern exists in the graph. Either the pattern already exists, or it needs to be created.
+
+### call{}(subquery)
+
+> The `CALL {}` clause evaluates a subquery that returns some values.
+
+```sql
+unwind [0, 1, 2] as x
+call {
+    with x
+    return x * 10 as y
+}
+return x, y
+```
+
+### call procedure
+
+```sql
+CALL dbms.procedures() YIELD name, signature
+WHERE name='dbms.listConfig'
+RETURN signature
+#╒══════════════════════════════════════════════════════════════════════╕
+#│"signature"                                                           │
+#╞══════════════════════════════════════════════════════════════════════╡
+#│"dbms.listConfig(searchString =  :: STRING?) :: (name :: STRING?, desc│
+#│ription :: STRING?, value :: STRING?, dynamic :: BOOLEAN?)"           │
+#└──────────────────────────────────────────────────────────────────────┘
+```
+
+### union
+
+> The `UNION` clause is used to combine the result of multiple queries.
+
+### use
+
+```sql
+use neo4j
+match (n:Person) return n.name
+```
+
+### show functions
+
+### show procedures
 
 
 
