@@ -29,3 +29,4 @@
 27. [neo4j入门](https://www.w3cschool.cn/neo4j/)
 28. [Arthas Tunnel](https://arthas.aliyun.com/doc/tunnel.html#arthas-tunnel-server)
 29. MQ 的事务消息，exactly-once 语义等
+30. [OpenResty 最佳实践](https://moonbingbing.gitbooks.io/openresty-best-practices/content/)
