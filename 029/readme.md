@@ -2,14 +2,16 @@
 
 ## reference
 
+- [Exactly Once Delivery and Transactional Messaging in Kafka](https://docs.google.com/document/d/11Jqy_GjUGtdXJK94XGsEIK7CP1SnQGdp2eF0wSw9ra8/edit#heading=h.pxd1n1pvutgj)
+- [KIP-98 - Exactly Once Delivery and Transactional Messaging](https://cwiki.apache.org/confluence/display/KAFKA/KIP-98+-+Exactly+Once+Delivery+and+Transactional+Messaging)
 - [Kafka消息送达语义详解](https://www.jianshu.com/p/0943bbf482e9)
 - [Kafka事务特性详解](https://www.jianshu.com/p/64c93065473e)
 - [Kafka设计解析（八）- Exactly Once语义与事务机制原理](http://www.jasongj.com/kafka/transaction/)
 - [Exactly-Once Semantics Are Possible: Here’s How Kafka Does It](https://www.confluent.io/blog/exactly-once-semantics-are-possible-heres-how-apache-kafka-does-it/)
 - [Transactions in Apache Kafka](https://www.confluent.io/blog/transactions-apache-kafka)
 - [Exactly-Once Processing in Kafka explained](https://ssudan16.medium.com/exactly-once-processing-in-kafka-explained-66ecc41a8548)
-- [KIP-98 - Exactly Once Delivery and Transactional Messaging](https://cwiki.apache.org/confluence/display/KAFKA/KIP-98+-+Exactly+Once+Delivery+and+Transactional+Messaging)
 - [kafka distributed transaction with jdon-framework](https://github.com/banq/jdon-kafka)
+- [Enabling Exactly-Once in Kafka Streams](https://www.confluent.io/blog/enabling-exactly-once-kafka-streams/Enabling Exactly-Once in Kafka Streams)
 - [kafka-exactly-once tutorial](https://github.com/koeninger/kafka-exactly-once)
 - [Effectively-Once Semantics in Apache Pulsar](https://www.splunk.com/en_us/blog/it/effectively-once-semantics-in-apache-pulsar.html)
 - [Using Kafka MockProducer](https://www.baeldung.com/kafka-mockproducer)
@@ -230,9 +232,7 @@ kafka 的事务需要保证 **跨分区的多个写操作的原子性**
 
 为了保证事务特性，Consumer如果设置了`isolation.level = read_committed`，那么它只会读取已经提交了的消息。在Producer成功提交事务后，Kafka会将所有该事务中的消息的`Transaction Marker`从`uncommitted`标记为`committed`状态，从而所有的Consumer都能够消费。
 
-### 4. kafka 的事务原理
-
-![04](../027/04.png)
+## Kafka设计解析（八）- Exactly Once语义与事务机制原理
 
 #### transactional.id
 
@@ -312,17 +312,57 @@ public class TransactionManager {
 }
 ```
 
+#### 事务请求
+
+##### InitPidRequest/Response
+
+> Sent by producer to its transaction coordinator to to get the assigned PID, increment its epoch, and fence any previous producers sharing the same TransactionalId. Request handling details can be found [here](https://docs.google.com/document/d/11Jqy_GjUGtdXJK94XGsEIK7CP1SnQGdp2eF0wSw9ra8/edit#bookmark=id.jro89lml46du).
+
+```
+InitPidRequest => TransactionalId TransactionTimeoutMs
+ ``TransactionalId => String
+ ``TransactionTimeoutMs => int32
+```
+
+##### AddPartitionsToTxnRequest/Response
+
+> Sent by producer to its transaction coordinator to add a partition to the current ongoing transaction. Request handling details can be found [here](https://docs.google.com/document/d/11Jqy_GjUGtdXJK94XGsEIK7CP1SnQGdp2eF0wSw9ra8/edit#bookmark=id.aywz22lp6tma).
+
+##### ProduceRequest/Response
+
+> Sent by the producer to any brokers to produce messages. Instead of allowing the protocol to send multiple message sets for each partition, we modify the schema to allow only one message set for each partition. This allows us to remove the message set size since each message set already contains a field for the size. More importantly, since there is only one message set to be written to the log, partial produce failures are no longer possible. The full message set is either successfully written to the log (and replicated) or it is not.
+>
+> We include the TransactionalId in order to ensure that producers using transactional messages (i.e. those with the transaction bit set in the attributes) are authorized to do so. If the client is not using transactions, this field should be null.
+
+##### AddOffsetsToTxnRequest
+
+> Sent by the producer to its transaction coordinator to indicate a consumer offset commit operation is called as part of the current ongoing transaction. Request handling details can be found [here](https://docs.google.com/document/d/11Jqy_GjUGtdXJK94XGsEIK7CP1SnQGdp2eF0wSw9ra8/edit#bookmark=id.5xa2hzric4h0).
+
+##### TxnOffsetCommitRequest
+
+> Sent by transactional producers to consumer group coordinator to commit offsets within a single transaction. Request handling details can be found [here](https://docs.google.com/document/d/11Jqy_GjUGtdXJK94XGsEIK7CP1SnQGdp2eF0wSw9ra8/edit#bookmark=id.55yzhvkppi6m).
+>
+> Note that just like consumers, users will not be exposed to set the retention time explicitly, and the default value (-1) will always be used which lets broker to determine its retention time.
+
+##### EndTxnRequest
+
+> When a producer is finished with a transaction, the newly introduced KafkaProducer.endTransaction or KafkaProducer.abortTransaction must be called. The former makes the data produced in 4 available to downstream consumers. The latter effectively erases the produced data from the log: it will never be accessible to the user, ie. downstream consumers will read and discard the aborted messages.
+
 #### 事务性保证
 
+> 幂等设计只能保证单个Producer对于同一个`<Topic, Partition>`的`Exactly Once`语义。
+>
+> **不能保证写操作的原子性**
+>
 > 对于Kafka Stream应用而言，典型的操作即是从某个Topic消费数据，经过一系列转换后写回另一个Topic，保证从源Topic的读取与向目标Topic的写入的原子性有助于从故障中恢复。
 
 事务保证可使得应用程序将生产数据和消费数据当作一个原子单元来处理，要么全部成功，要么全部失败，即使该生产或消费跨多个`<Topic, Partition>`。
 
 另外，有状态的应用也可以保证重启后从断点处继续处理，也即事务恢复。
 
-为了实现这种效果，**应用程序必须提供一个稳定的（重启后不变）唯一的ID**，也即`Transaction ID`。`Transactin ID`与`PID`可能一一对应。区别在于`Transaction ID`由用户提供，而`PID`是内部的实现对用户透明。
+为了实现这种效果，**应用程序必须提供一个稳定的（重启后不变）唯一的ID**，也即 TransactionID。Transaction ID 与PID 可能一一对应。区别 **在于 TransactionID 由用户提供**，而 PID 是内部的实现对用户透明。
 
-另外，为了保证新的Producer启动后，旧的具有相同`Transaction ID`的Producer即失效，每次Producer通过`Transaction ID`拿到PID的同时，还会获取一个单调递增的epoch。由于旧的Producer的epoch比新Producer的epoch小，Kafka可以很容易识别出该Producer是老的Producer并拒绝其请求。
+另外，为了保证新的Producer启动后，旧的具有相同 TransactionID 的Producer即失效，每次Producer通过 TransactionID 拿到PID的同时，还会获取一个单调递增的epoch。由于旧的Producer的epoch比新Producer的epoch小，Kafka可以很容易识别出该Producer是老的Producer并拒绝其请求。
 
 #### 事务机制原理
 
@@ -387,29 +427,145 @@ try{
 }
 ```
 
-##### 完整事务过程
+#### Key Concepts
 
-![04](../027/04.png)
+To implement transactions, ie. ensuring that a group of messages are produced and consumed atomically, we introduce several new concepts:
 
-###### 找到`Transaction Coordinator`
+1. We introduce a new entity called a Transaction Coordinator. Similar to the consumer group coordinator, each producer is assigned a transaction coordinator, and all the logic of assigning PIDs and managing transactions is done by the transaction coordinator.
+2. We introduce a new internal kafka topic called the Transaction Log. Similar to the Consumer Offsets topic, the transaction log is a persistent and replicated record of every transaction. The transaction log is the state store for the transaction coordinator, with the snapshot of the latest version of the log encapsulating the current state of each active transaction.
+3. We introduce the notion of Control Messages. These are special messages written to user topics, processed by clients, but never exposed to users. They are used, for instance, to let brokers indicate to consumers if the previously fetched messages have been committed atomically or not. Control messages have been previously proposed [here](https://issues.apache.org/jira/browse/KAFKA-1639).
+4. We introduce a notion of TransactionalId, to enable users to uniquely identify producers in a persistent way. Different instances of a producer with the same TransactionalId will be able to resume (or abort) any transactions instantiated by the previous instance.
+5. We introduce the notion of a producer epoch, which enables us to ensure that there is only one legitimate active instance of a producer with a given TransactionalId, and hence enables us to maintain transaction guarantees in the event of failures.
 
-> 由于`Transaction Coordinator`是分配PID和管理事务的核心，因此Producer要做的第一件事情就是通过向任意一个Broker发送`FindCoordinator`请求找到`Transaction Coordinator`的位置。
+#### Data Flow
 
-###### 获取PID
-
-找到`Transaction Coordinator`后，具有幂等特性的Producer必须发起`InitPidRequest`请求以获取PID。
-
-
-
-**如果事务特性被开启**：`InitPidRequest`会发送给`Transaction Coordinator`。如果`Transaction Coordinator`是第一次收到包含有该`Transaction ID`的InitPidRequest请求，它将会把该`<TransactionID, PID>`存入`Transaction Log`，如上图中步骤2.1所示。这样可保证该对应关系被持久化，从而保证即使`Transaction Coordinator`宕机该对应关系也不会丢失。
+![Kafka Transactions Data Flow](./Kafka Transactions Data Flow.png)
 
 
 
+##### 1. Finding a transaction coordinator -- the `FindCoordinatorRequest`
 
+##### 2. Getting a producer Id -- the `InitPidRequest`
 
+> #### 2.1 When an TransactionalId is specified
+>
+> If the transactional.id configuration is set, this TransactionalId passed along with the InitPidRequest, and the mapping to the corresponding PID is logged in the transaction log in step `2a`.
+>
+> In addition to returning the PID, the InitPidRequest performs the following tasks:
+>
+> 1. Bumps up the epoch of the PID, so that the any previous zombie instance of the producer is fenced off and cannot move forward with its transaction.
+> 2. Recovers (rolls forward or rolls back) any transaction left incomplete by the previous instance of the producer.
+>
+> The handling of the InitPidRequest is synchronous. Once it returns, the producer can send data and start new transactions.
+>
+> #### 2.2 When an TransactionalId is not specified
+>
+> If no TransactionalId is specified in the configuration, a fresh PID is assigned, and the producer only enjoys idempotent semantics and transactional semantics within a single session.
 
+##### 3. Starting a Transaction – The beginTransaction() API
 
+>The new KafkaProducer will have a beginTransaction() method which has to be called to signal the start of a new transaction. The producer records local state indicating that the transaction has begun, but the transaction won’t begin from the coordinator’s perspective until the first record is sent.
 
+##### 4. The consume-transform-produce loop
+
+> In this stage, the producer begins to consume-transform-produce the messages that comprise the transaction. This is a long phase and is potentially comprised of multiple requests.
+>
+> #### 4.1 AddPartitionsToTxnRequest
+>
+> The producer sends this request to the transaction coordinator the first time a new TopicPartition is written to as part of a transaction. The addition of this TopicPartition to the transaction is logged by the coordinator in step `4.1a`. We need this information so that we can write the commit or abort markers to each TopicPartition (see section `5.2` for details). If this is the first partition added to the transaction, the coordinator will also start the transaction timer.
+>
+> #### 4.2 ProduceRequest
+>
+> The producer writes a bunch of messages to the user’s TopicPartitions through one or more ProduceRequests (fired from the send method of the producer). These requests include the PID , epoch, and sequence number as denoted in `4.2a`.
+>
+> ####  4.3 AddOffsetCommitsToTxnRequest
+>
+> The producer has a new `KafkaProducer.sendOffsetsToTransaction` API method, which enables the batching of consumed and produced messages. This method takes a Map<TopicPartitions, OffsetAndMetadata> and a groupId argument.
+>
+> The sendOffsetsToTransaction method sends an AddOffsetCommitsToTxnRequests with the groupId to the transaction coordinator, from which it can deduce the TopicPartition for this consumer group in the internal __consumer-offsets topic. The transaction coordinator logs the addition of this topic partition to the transaction log in step `4.3a`.
+>
+> #### 4.4 TxnOffsetCommitRequest
+>
+> Also as part of sendOffsets, the producer will send a TxnOffsetCommitRequest to the consumer coordinator to persist the offsets in the __consumer-offsets topic (step `4.4a`). The consumer coordinator validates that the producer is allowed to make this request (and is not a zombie) by using the PID and producer epoch which are sent as part of this request.
+>
+> The consumed offsets are not visible externally until the transaction is committed, the process for which we will discuss now.
+
+##### 5. Committing or Aborting a Transaction
+
+> Once the data has been written, the user must call the new commitTransaction or abortTransaction methods of the KafkaProducer. These methods will begin the process of committing or aborting the transaction respectively.
+>
+> #### 5.1 EndTxnRequest
+>
+> When a producer is finished with a transaction, the newly introduced KafkaProducer.endTransaction or KafkaProducer.abortTransaction must be called. The former makes the data produced in 4 available to downstream consumers. The latter effectively erases the produced data from the log: it will never be accessible to the user, ie. downstream consumers will read and discard the aborted messages.
+>
+> Regardless of which producer method is called, the producer issues an EndTxnRequest to the transaction coordinator, with additional data indicating whether the transaction is to be committed or aborted. Upon receiving this request, the coordinator:
+>
+> 1.  Writes a PREPARE_COMMIT or PREPARE_ABORT message to the transaction log. (step 5.1a)
+> 2. Begins the process of writing the command messages known as COMMIT (or ABORT) markers to the user logs through the WriteTxnMarkerRequest. (see section 5.2 below).
+> 3.  Finally writes the COMMITTED (or ABORTED) message to transaction log. (see 5.3 below).
+>
+> #### 5.2 WriteTxnMarkerRequest
+>
+> This request is issued by the transaction coordinator to the the leader of each TopicPartition which is part of the transaction. Upon receiving this request, each broker will write a COMMIT(PID) or ABORT(PID) control message to the log. (step 5.2a)
+>
+> This message indicates to consumers whether the messages with the given PID must be delivered to the user or dropped. As such, the consumer will buffer messages which have a PID until it reads a corresponding COMMIT or ABORT message, at which point it will deliver or drop the messages respectively.
+>
+> Note that, if the __consumer-offsets topic is one of the TopicPartitions in the transaction, the commit (or abort) marker is also written to the log, and the consumer coordinator is notified that it needs to materialize these offsets in the case of a commit or ignore them in the case of an abort (step 5.2a on the left).
+>
+> #### 5.3 Writing the final Commit or Abort Message
+>
+> After all the commit or abort markers are written the data logs, the transaction coordinator writes the final COMMITTED or ABORTED message to the transaction log, indicating that the transaction is complete (step 5.3 in the diagram). At this point, most of the messages pertaining to the transaction in the transaction log can be removed.
+>
+> We only need to retain the PID of the completed transaction along with a timestamp, so we can eventually remove the TransactionalId->PID mapping for the producer. See the Expiring PIDs section below.
+
+```java
+    /**
+     * Sends a list of specified offsets to the consumer group coordinator, and also marks
+     * those offsets as part of the current transaction. These offsets will be considered
+     * committed only if the transaction is committed successfully. The committed offset should
+     * be the next message your application will consume, i.e. lastProcessedMessageOffset + 1.
+     * <p>
+     * This method should be used when you need to batch consumed and produced messages
+     * together, typically in a consume-transform-produce pattern. Thus, the specified
+     * {@code consumerGroupId} should be the same as config parameter {@code group.id} of the used
+     * {@link KafkaConsumer consumer}. Note, that the consumer should have {@code enable.auto.commit=false}
+     * and should also not commit offsets manually (via {@link KafkaConsumer#commitSync(Map) sync} or
+     * {@link KafkaConsumer#commitAsync(Map, OffsetCommitCallback) async} commits).
+     *
+     * @throws IllegalStateException if no transactional.id has been configured or no transaction has been started
+     * @throws ProducerFencedException fatal error indicating another producer with the same transactional.id is active
+     * @throws org.apache.kafka.common.errors.UnsupportedVersionException fatal error indicating the broker
+     *         does not support transactions (i.e. if its version is lower than 0.11.0.0)
+     * @throws org.apache.kafka.common.errors.UnsupportedForMessageFormatException  fatal error indicating the message
+     *         format used for the offsets topic on the broker does not support transactions
+     * @throws org.apache.kafka.common.errors.AuthorizationException fatal error indicating that the configured
+     *         transactional.id is not authorized. See the exception for more details
+     * @throws KafkaException if the producer has encountered a previous fatal or abortable error, or for any
+     *         other unexpected error
+     */
+    public void sendOffsetsToTransaction(Map<TopicPartition, OffsetAndMetadata> offsets,
+                                         String consumerGroupId) throws ProducerFencedException {
+        throwIfNoTransactionManager();
+        TransactionalRequestResult result = transactionManager.sendOffsetsToTransaction(offsets, consumerGroupId);
+        sender.wakeup();
+        result.await();
+    }
+
+```
+
+#### 总结
+
+总的来说可以粗略的分为一下几个阶段：
+
+1. 查找 Transaction Coordinator
+2. Producer 通过 Transaction Coordinator 获取一个唯一的PID，可以用于过滤僵尸 Producer，提交/回滚事务，同时需要记录 txId 和 PID 的对应关系方便在重启之后恢复 txId；
+3. 开始事务；
+4. 消费-转换-生产循环
+   1. 第一次将 `TopicPartition` 作为事务的一部分写入时，会通过 Transaction Coordinator 记录 Insert Topic Partition(PID)；
+   2. 随后向 broker 写入数据；
+   3. 通过 `KafkaProducer.sendOffsetsToTransaction` 方法提交 producer off 到 Transaction Coordinator
+   4. 通过 `KafkaProducer.sendOffsetsToTransaction` 方法提交 consumer off 到 Consumer Coordinator
+5. commit/abort 事务
 
 
 
