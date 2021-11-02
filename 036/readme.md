@@ -3,6 +3,8 @@
 ## question
 
 1. 因为 rc 是和 label 绑定的，那么 kubernetes 集群中是否会存在两个 label 一模一样的 pod？
+2. 为什么需要使用 endpoint？
+3. ClusterIP、PodId、ExternalIP 的区别？
 
 ## references
 
@@ -16,6 +18,17 @@
 ## components-of-kubernetes
 
 ![components-of-kubernetes](components-of-kubernetes.svg)
+
+## minikube
+
+```bash
+minikube start 
+	--cpus=2
+	--memory=2048mb
+	--registry-mirror=https://t65rjofu.mirror.aliyuncs.com
+	--driver=virtualbox
+	--nodes=3
+```
 
 ## 1. Kubernetes 介绍
 
@@ -1360,19 +1373,673 @@ spec:
             image: luksa/batch-job
 ```
 
+## 5. 服务：让客户端发现 pod 并与之通信
 
+### 目录
 
+1. 创建服务资源，利用单个地址访问一组 pod；
+2. 发现集群中的服务；
+3. 将服务公开给外部的客户端；
+4. 从集群内部连接外部服务；
+5. 控制 pod 与服务关联；
+6. 排除服务故障。
 
+> 1. pod 通常需要接受集群内其他 pod 或者来自外部的客户端的http 的请求并作出响应；
+> 2. pod 的特点
+>    1. pod 会随时启动或者关闭；
+>    2. kubernetes 在 pod 启动前会给已经调度到节点上的 pod 分配 ip 地址，因此客户端不能提前知道 pod 的地址；
+>    3. pod 的数量是不固定的；
+> 3. 基于 <2>，kubernetes 提供了一种资源类型 -- **服务（service）** 来解决与客户端或者其他 pod 通信的问题。
 
+### 5.1 介绍 service
 
+> service 是一种为一组功能相同的 pod 提供单一不变的接入点的资源。
+>
+> 当 service 存在时，他的 ip 和 port 不会变更，客户端可以通过这个 ip 和 port 连接服务而不需要在意后端 pod。
 
+#### 结合实例解释服务
 
+> 假设存在一个如下服务：
+>
+> 客户端 -> 前端 -> DB
+>
+> 那么我们需要做的是：
+>
+> 1. 为前端 pod 创建服务，并可以在集群外部访问，可以暴露一个单一不变的IP地址让客户端连接；
+> 2. 为后端 pod 创建服务，并分配一个固定的ip地址，尽管后端 pod 会变，但是 service 的 ip 地址固定不变。
 
+![内部和外部客户端通常通过service连接到 pod](内部和外部客户端通常通过service连接到 pod.png)
 
+#### 5.1.1 创建服务
 
+> rc 和其他的 pod 控制器中使用标签选择器来指定哪些 pod 属于同一组。service 使用相同的机制。
 
+![service通过标签选择器来选择pod](service通过标签选择器来选择pod.png)
 
+##### 通过 kubectl expose 创建服务
 
+> 下面的配置会生成 service，service 将所有来自 80 端口的请求，转发到所有具有标签 `app=kubia` 的 pod 的 8080 端口。
+
+```yaml
+apiVersion: v1
+# 指定类型为 service
+kind: Service
+metadata:
+  name: kubia
+spec:
+  # service 将连接转发到容器的端口
+  ports:
+  - port: 80
+    targetPort: 8080
+  # 具有 app=kubia 标签的 pod 都属于该服务
+  selector:
+    app: kubia
+```
+
+```bash
+k create -f kubia-svc.yaml
+#service/kubia created
+
+k get services --show-labels
+#NAME         TYPE           CLUSTER-IP       EXTERNAL-IP   PORT(S)          AGE   LABELS
+#kubernetes   ClusterIP      10.96.0.1        <none>        443/TCP          2d    component=apiserver,provider=kubernetes
+#kubia        ClusterIP      10.100.127.78    <none>        80/TCP           20s   <none>
+```
+
+##### 在运行的容器中远程执行命令
+
+> `--` 代表 kubectl 命令的结束。
+
+```bash
+# 找一台集群中running 的pod
+k get pods
+#NAME             READY   STATUS    RESTARTS   AGE
+#kubia-rc-44mbb   1/1     Running   0          53s
+#kubia-rc-f8fmq   1/1     Running   0          53s
+#kubia-rc-fcbwn   1/1     Running   0          53s
+#kubia-rc-rm4jl   1/1     Running   0          53s
+
+# 执行 curl 指令
+k exec kubia-rc-44mbb -- curl -s http://10.100.127.78:80
+#You've hit kubia-rc-fcbwn
+
+k exec kubia-rc-44mbb -- curl -s http://10.100.127.78:80
+#You've hit kubia-rc-44mbb
+
+k exec kubia-rc-44mbb -- curl -s http://10.100.127.78:80
+#You've hit kubia-rc-rm4jl
+```
+
+![kubectl exec 执行 curl](kubectl exec 执行 curl.png)
+
+##### 配置service上的会话亲和性
+
+> 由于负载均衡，请求的pod可能不固定。如果需要请求指向同一个ip，可以通过制定 sessionAffinity 属性为 ClientIP。
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: kubia
+spec:
+  sessionAffinity: ClientIP
+  ports:
+  - port: 80
+    targetPort: 8080
+  selector:
+    app: kubia
+```
+
+```bash
+k exec kubia-rc-44mbb -- curl -s http://10.96.8.104:80
+#You've hit kubia-rc-rm4jl
+
+k exec kubia-rc-44mbb -- curl -s http://10.96.8.104:80
+#You've hit kubia-rc-rm4jl
+
+k exec kubia-rc-44mbb -- curl -s http://10.96.8.104:80
+#You've hit kubia-rc-rm4jl
+```
+
+##### 同一个服务暴露多个端口
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: kubia
+spec:
+  sessionAffinity: ClientIP
+  ports:
+  - port: 80
+    name: http
+    targetPort: 8080
+  - port: 443
+    name: https
+    targetPort: 8443
+  selector:
+    app: kubia
+```
+
+> 端口的标签选择器应用于整个 service，不能对每个端口做单独的配置。
+
+##### 使用命名的端口
+
+> 在服务 spec 中也可以给不同的端口号命名
+
+```yaml
+# 在 pod 的定义中指定 port 名称
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+    - name: kubia
+      containerPort: 8080
+    - name: https
+      caontinerPort: 8443
+```
+
+```yaml
+# 在服务中引用命名pod
+apiVersion: v1
+kind: Service
+spec:
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+    - name: https
+      port: 443
+      targetPort: https
+```
+
+#### 5.1.2 服务发现
+
+> kubernetes 还为客户端提供了发现服务的IP和端口的方式。
+
+##### 通过环境变量发现服务
+
+> 环境变量是获得服务IP地址和端口的一种方式，我们还允许通过 DNS 来获得所有服务的IP和地址
+
+```bash
+# 查看环境变量
+k exec kubia-rc-44mbb -- env
+#...
+# 服务的集群 ip 和 port
+#KUBIA_SERVICE_HOST=10.100.127.78
+#KUBIA_SERVICE_PORT=80
+#...
+```
+
+##### 通过DNS发现服务
+
+```bash
+#coredns 是 kubernetes 内部的 DNS 服务
+k get pod --show-labels --namespace kube-system
+#coredns-74ff55c5b-klnsq            1/1     Running   1          5d    k8s-app=kube-dns,pod-template-hash=74ff55c5b
+```
+
+##### 通过FQDN(Fully Qualified Domain Name)连接服务
+
+> 在我们前面的例子中，前端pod可以通过 `backend-database.default.svc.cluter.local` 访问后端数据服务
+>
+> - backend-database 对应于服务名称
+> - default 表示服务的命名空间
+> - svc.cluster.local 是在所有集群本地服务名中使用的可配置集群域后缀
+>
+> 如果前端pod和数据库pod在同一个命名空间下，可以省略 svc.cluster.local 后缀，甚至命名空间。
+
+##### 在 pod 容器中运行 shell
+
+```bash
+# 进入 bash
+k exec kubia-rc-44mbb -it -- /bin/bash
+
+curl http://kubia.default.svc.cluster.local
+#You've hit kubia-rc-rm4jl
+
+curl http://kubia.default
+#You've hit kubia-rc-rm4jl
+
+curl http://kubia
+#You've hit kubia-rc-rm4jl
+
+cat /etc/resolv.conf
+#nameserver 10.96.0.10
+#search default.svc.cluster.local svc.cluster.local cluster.local
+#options ndots:5
+```
+
+##### 无法ping通服务IP的原因
+
+> 服务的集群IP是一个虚拟IP，并且只有和服务端口结合时才有意义。
+
+### 5.2 连接集群外部的服务
+
+#### 5.2.1 介绍服务 endpoint
+
+> 服务并不是和pod直接相连的，有一种资源介于两者之间 -- endpoint。
+
+```bash
+k describe services kubia
+#...
+#Selector:          app=kubia
+#Endpoints:         10.244.1.10:8080,10.244.2.19:8080,10.244.2.20:8080 + 1 more...
+#...
+
+k get endpoints kubia
+#NAME    ENDPOINTS                                                        AGE
+#kubia   10.244.1.10:8443,10.244.2.19:8443,10.244.2.20:8443 + 5 more...   2d22h
+
+k describe endpoints kubia
+```
+
+#### 5.2.2 手动配置服务的 endpoint
+
+> 如果创建了不包含 `selector` 的 service，kubernetes 将不会创建 endpoint 资源，因为缺少选择器，将无法确定 service 中包含了哪些 pod。
+
+##### 创建没有选择器的服务
+
+> 定义一个名为 external-service 的服务，接收端口 80 上的连接，并没有为服务选定一个 pod selector
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: external-service
+spec:
+  ports:
+    - port: 80
+```
+
+##### 为没有选择器的服务创建 endpoint 资源
+
+> 这样，上面没有 pod 选择器的 service 就可以连接到下面的这些 endpoint 了。
+
+```yaml
+apiVersion: v1
+kind: Endpoints
+# endpoint 的名称必须和服务的名称相匹配
+metadata:
+  name: external-service
+subsets:
+  - addresses:
+    - ip: 11.11.11.11
+    - ip: 22.22.22.22
+    ports:
+    - port: 80
+```
+
+#### 5.2.3 为外部服务创建别名
+
+##### 创建 ExternalName 类型的服务
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: external-service
+spec:
+  type: ExternalName
+  externalName: someapi.somecompany.com
+  ports:
+    - port: 80
+```
+
+### 5.3 将服务暴露给外部客户端
+
+- 将服务类型设置为 NodePort，并将在该端口上接收到的流量重定向到基础服务；
+- 将服务的类型设置成 LoadBalance，一种 NodePort 的扩展类型；
+- 创建一个 ingress 资源。
+
+#### 5.3.1 使用 NodePort 类型的服务
+
+##### 创建 NodePort 类型的服务
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: kubia-nodeport
+spec:
+  type: NodePort
+  ports:
+  - port: 80
+    targetPort: 8080
+    nodePort: 30123
+  selector:
+    app: kubia
+```
+
+```bash
+# 打开 minikube 的外部访问通道
+minikube service kubia-nodeport --url
+
+#🏃  Starting tunnel for service kubia-nodeport.
+#|-----------|----------------|-------------|------------------------|
+#| NAMESPACE |      NAME      | TARGET PORT |          URL           |
+#|-----------|----------------|-------------|------------------------|
+#| default   | kubia-nodeport |             | http://127.0.0.1:60965 |
+#|-----------|----------------|-------------|------------------------|
+#http://127.0.0.1:60965
+#❗  Because you are using a Docker driver on darwin, the terminal needs to be open to run it.
+
+curl http://127.0.0.1:60965
+```
+
+![外部客户端通过节点1或者节点2连接到NodePort服务](外部客户端通过节点1或者节点2连接到NodePort服务.png)
+
+#### 5.3.2 通过负载均衡器将服务暴露出来
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: kubia-loadbalancer
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 80
+    targetPort: 8080
+  selector:
+    app: kubia
+```
+
+```bash
+# 启动 minikube url
+minikube service kubia-loadbalancer --url
+```
+
+##### SessionAffinity
+
+我们可以通过浏览器和 curl 访问服务，但是我们发现一个有趣的现象：浏览器每次都是同一个pod，而 curl 则不一定，是否是因为设置了 sessionAffinity 呢？
+
+结论是不是，是因为浏览器使用 keep-alive 连接，并通过单个连接发送所有请求。而 curl 每次都会打开一个新的连接。
+
+**服务在连接级别工作**，所以不管是否设置 sessionAffinity，用户在浏览器中始终会使用相同的连接。
+
+![外部客户端连接一个LoadBalancer服务](外部客户端连接一个LoadBalancer服务.png)
+
+#### 5.3.3 了解外部连接的特性
+
+##### 了解并防止不必要的网络跳数
+
+> 客户端 -> LoadBalancer -> Service 这个链路中， LoadBalancer 和 Service 可能在两个不同的节点。
+>
+> 我们可以配置仅仅重定向到同节点的 pod。
+>
+> spec.externalTrafficPolicy
+
+```bash
+k explain service.spec.externalTrafficPolicy
+
+#KIND:     Service
+#VERSION:  v1
+#
+#FIELD:    externalTrafficPolicy <string>
+#
+#DESCRIPTION:
+#     externalTrafficPolicy denotes if this Service desires to route external
+#     traffic to node-local or cluster-wide endpoints. "Local" preserves the
+#     client source IP and avoids a second hop for LoadBalancer and Nodeport type
+#     services, but risks potentially imbalanced traffic spreading. "Cluster"
+#     obscures the client source IP and may cause a second hop to another node,
+#     but should have good overall load-spreading.
+```
+
+### 5.4 通过 ingress 暴露服务
+
+#### 为什么需要 ingress
+
+> 每个 LoadBalancer 都需要自己的负载均衡器，但是 ingress 可以为多个服务提供访问。
+
+![ingress](通过一个ingress暴露多个服务.png)
+
+```bash
+#查看 ingress
+minikube addons list
+
+#开启 ingress
+minikube addons enable ingress
+```
+
+#### 5.4.1 创建 ingress 资源
+
+> 最开始，我配置了 `serviceName: kubia-nodexport` 但是没有启动 `kubia-nodeexport`，所以一直 502.
+>
+> 配置 `/etc/host`使得 kubia.example.com -> 虚拟ip
+
+```yaml
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: kubia
+spec:
+  rules:
+  - host: kubia.example.com
+    http:
+      paths:
+        - path: /
+          backend:
+            serviceName: kubia
+            servicePort: 80
+```
+
+```bash
+k get ingress
+#NAME    CLASS    HOSTS               ADDRESS          PORTS   AGE   LABELS
+#kubia   <none>   kubia.example.com   192.168.99.102   80      16s   <none>
+
+curl http://kubia.example.com
+#You've hit kubia-rc-xxh27
+
+curl 192.168.99.102
+# 404 异常
+```
+
+##### 了解 ingress 的工作原理
+
+> ingress 控制器通过 http 请求的 header 确定客户端尝试访问哪个 service，**通过与该服务关联的 endpoint 对象查看 podId**。
+>
+> ingress 控制器不会把请求转发给服务，只用它来选择一个 pod。
+
+![通过ingress访问pod](通过ingress访问pod.png)
+
+#### 5.4.3 通过相同的 ingress 暴露多个服务
+
+```yaml
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: kubia
+spec:
+  rules:
+  - host: kubia.example.com
+    http:
+      paths:
+        #        - path: /
+        #          backend:
+        #            serviceName: kubia
+        #            servicePort: 80
+        - path: /kubia
+          backend:
+            serviceName: kubia
+            servicePort: 80
+```
+
+#### 5.4.4 配置 ingress 处理 TLS 传输
+
+```bash
+#创建私钥和证书
+openssl req -new -x509 -key tls.key -out tls.cert -days 360 -subj
+openssl req -new -x509 -key tls.key -out tls.cert -days 360 -subj /CN=kubia.example.com
+
+#创建 Secret
+#私钥和证书现在存储在名为 tls-secret 的 Secret 中。
+kubectl create secret tls tls-secret --cert=tls.cert --key=tls.key
+```
+
+```yaml
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: kubia-tls
+spec:
+  # 配置 tls
+  tls:
+  - hosts:
+    # 接受来自 kubia.example.com 主机的 tls 连接
+    - kubia.example.com
+    # 从 tls-secret 中获得之前创建的私钥和证书
+    secretName: tls-secret
+  rules:
+  - host: kubia.example.com
+    http:
+      paths:
+        #        - path: /
+        #          backend:
+        #            serviceName: kubia
+        #            servicePort: 80
+        - path: /kubia-tls
+          backend:
+            serviceName: kubia
+            servicePort: 80
+```
+
+```bash
+#访问 tls 服务
+curl -k -v https://kubia.example.com/kubia-tls
+#...
+#You've hit kubia-rc-c7ngq
+#* Connection #0 to host kubia.example.com left intact
+#* Closing connection 0
+```
+
+### 5.5 pod 就绪后发出信号
+
+#### 5.5.1 就绪探针
+
+> 和存活探针一样，就绪探针有三种类型：
+>
+> 1. exec 探针
+> 2. HTTP GET 探针
+> 3. TCP socket 探针
+
+![就绪探针探测endpoint](就绪探针探测endpoint.png)
+
+##### 添加就绪探针
+
+> 下面的配置文件，因为初始没有 `/var/ready` 文件，所以 pod 的状态一直是错的。创建 `/var/ready` 文件
+
+```yaml
+apiVersion: v1
+# 这里定义了 rc
+kind: ReplicationController
+metadata:
+  name: kubia-rc-readiness-probe
+spec:
+  # pod 实例数量
+  replicas: 1
+  # selector 决定了 rc 的操作对象
+  selector:
+    app: kubia
+  # 创建新 pod 使用的模板
+  template:
+    metadata:
+      labels:
+        app: kubia
+    spec:
+      containers:
+        - name: kubia
+          image: luksa/kubia
+          ports:
+            - containerPort: 8080
+          # pod 中的每个容器都会有一个就绪探针
+          readinessProbe:
+            exec:
+              command:
+                - ls
+                - /var/ready
+```
+
+```bash
+k get pods --show-labels
+#kubia-rc-readiness-probe-r6nxn   0/1     Running   0          2m23s   app=kubia
+
+k exec kubia-rc-readiness-probe-r6nxn -it -- /bin/bash
+
+touch /var/ready
+```
+
+### 5.6 使用 headless 服务来发现独立的 pod
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: kubia-headless
+spec:
+  # 使得服务成为 headless 服务
+  clusterIP: None
+  ports:
+  - port: 80
+    name: http
+    targetPort: 8080
+  selector:
+    app: kubia
+```
+
+```bash
+# kubia-headless 没有 ClusterIP
+k get service --show-labels
+#NAME                 TYPE           CLUSTER-IP       EXTERNAL-IP   PORT(S)          AGE     LABELS
+#kubia-headless       ClusterIP      None             <none>        80/TCP           20s     <none>
+#kubia-loadbalancer   LoadBalancer   10.107.136.228   <pending>     80:30062/TCP     3h33m   <none>
+```
+
+### 5.7 排除服务故障
+
+1. 区分集群内IP和集群外IP；
+2. 不通过 ping 来探测服务；
+3. 就绪探针/存活探针不能出现错误；
+4. 要确认某个容器是服务的一部分，可以通过 `kubectl get endpoints` 来检查相应的端点对象；
+5. 当 FQDN 不起作用时，可以尝试一下使用IP访问服务；
+6. 尝试直接连接到PodId确认pod正常工作；
+
+##### 确认容器是服务的一部分
+
+```bash
+k get pods -o wide
+#NAME                             READY   STATUS    RESTARTS   AGE     IP           NODE           NOMINATED NODE   READINESS GATES
+#kubia-rc-c7ngq                   1/1     Running   0          3h52m   10.244.1.3   minikube-m02   <none>           <none>
+#kubia-rc-ctjn9                   1/1     Running   0          3h52m   10.244.2.4   minikube-m03   <none>           <none>
+#kubia-rc-readiness-probe-r6nxn   1/1     Running   0          36m     10.244.1.7   minikube-m02   <none>           <none>
+#kubia-rc-xmb2w                   1/1     Running   0          3h52m   10.244.2.5   minikube-m03   <none>           <none>
+#kubia-rc-xxh27                   1/1     Running   0          3h52m   10.244.1.4   minikube-m02   <none>           <none>
+
+k get endpoints
+#NAME                 ENDPOINTS                                                     AGE
+#external-service     11.11.11.11:80,22.22.22.22:80                                 8m40s
+#kubernetes           192.168.99.100:8443                                           4h
+#kubia                10.244.1.3:8443,10.244.1.4:8443,10.244.1.7:8443 + 7 more...   3h54m
+#kubia-headless       10.244.1.3:8080,10.244.1.4:8080,10.244.1.7:8080 + 2 more...   21m
+#kubia-loadbalancer   10.244.1.3:8080,10.244.1.4:8080,10.244.1.7:8080 + 2 more...   3h54m
+
+k describe endpoints kubia-headless
+#Name:         kubia-headless
+#Namespace:    default
+#Labels:       service.kubernetes.io/headless=
+#Annotations:  endpoints.kubernetes.io/last-change-trigger-time: 2021-11-02T07:38:47Z
+#Subsets:
+#  Addresses:          10.244.1.3,10.244.1.4,10.244.1.7,10.244.2.4,10.244.2.5
+#  NotReadyAddresses:  <none>
+#  Ports:
+#    Name  Port  Protocol
+#    ----  ----  --------
+#    http  8080  TCP
+#
+#Events:  <none>
+```
 
 
 
