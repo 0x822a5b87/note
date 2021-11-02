@@ -6,6 +6,10 @@
 2. 为什么需要使用 endpoint？
 3. ClusterIP、PodId、ExternalIP 的区别？
 
+### ClusterIP、PodId、ExternalIP 的区别？
+
+[k8s之PodIP、ClusterIP和ExternalIP](https://www.cnblogs.com/embedded-linux/p/12657128.html)
+
 ## references
 
 - [Kubernetes Components](https://kubernetes.io/docs/concepts/overview/components/)
