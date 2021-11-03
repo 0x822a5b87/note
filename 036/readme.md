@@ -14,6 +14,7 @@
 
 - [Kubernetes Components](https://kubernetes.io/docs/concepts/overview/components/)
 - [Glossary - a comprehensive, standardized list of Kubernetes terminology](https://kubernetes.io/docs/reference/glossary/)
+- [Kubernetes的三种外部访问方式：NodePort、LoadBalancer 和 Ingress](http://dockone.io/article/4884)
 
 ## roadmap
 
@@ -2045,9 +2046,454 @@ k describe endpoints kubia-headless
 #Events:  <none>
 ```
 
+## 6. 卷：将磁盘挂载到容器上
 
+> 1. 我们可能不希望 pod 的整个文件系统被持久化，又希望它能保存实际数据，为此 kubernetes 提供了 `卷`；
+> 2. kubernetes 中卷是 pod 的一部分，和 pod 的生命周期一样 -- 在启动时创建，在 delete 时销毁；
 
+### 6.1 介绍卷
 
+#### 6.1.1 卷的应用示例
+
+> 假设存在两个卷 `publicHtml` 和 `logVol`。
+>
+> /var/htdocs -> publicHtml
+>
+> /var/logs -> logVol
+>
+> /var/html -> publicHtml
+>
+> /var/logs -> logVol
+>
+> 这样三个容器就可以共享了数据了。
+
+![三个容器共享挂在在不同的安装路径的两个卷上](三个容器共享挂在在不同的安装路径的两个卷上.png)
+
+#### 6.1.2 介绍可用的卷类型
+
+- emptyDir 存储临时数据的简单空目录
+- hostPath 用于将目录从工作节点的文件系统挂在到pod上
+- gitRepo 通过检出 git 仓库的内容来初始化的卷
+- Nfs 怪哉到 pod 中的 NFS 共享卷
+- ...
+
+### 6.2 通过卷在容器之间共享数据
+
+#### 6.2.1 使用 emptyDir 卷
+
+##### 在 pod 中使用 emptyDir 卷
+
+> 把上面的例子继续简化，只保留 WebServer 和 ContentAgent。
+>
+> 我们使用 nginx 作为 web 服务器和 UNIX fortune 命令来生成 html 内容。
+
+```dockerfile
+FROM ubuntu:latest
+
+RUN apt-get update ; apt-get -y install fortune
+ADD fortuneloop.sh /bin/fortuneloop.sh
+
+ENTRYPOINT /bin/fortuneloop.sh
+```
+
+```bash
+#!/bin/bash
+trap "exit" SIGINT
+mkdir /var/htdocs
+
+while :
+do
+  echo $(date) Writing fortune to /var/htdocs/index.html
+  /usr/games/fortune > /var/htdocs/index.html
+  sleep 10
+done
+```
+
+##### 创建pod
+
+> 下面的配置创建了两个容器：html-generator 和 web-server。
+>
+> html-generator 每10s输出数据到 `/var/htdocs/index.html` 中，而 `/var/htdocs` 这个文件被挂载到了卷 html 下。
+>
+> web-server 从 `/user/share/nginx/html` 下读取数据，而这个文件也被挂载到了卷 html 下。
+
+```yaml
+apiVersion: v1
+#创建一个pod
+kind: Pod
+#Pod 名是 fortune
+metadata:
+  name: fortune
+spec:
+  containers:
+  - image: luksa/fortune
+    #容器名是html-generator
+    name: html-generator
+    #名为html的卷挂载在容器/var/htdocs中
+    volumeMounts:
+    - name: html
+      mountPath: /var/htdocs
+  - image: nginx:alpine
+    #容器名是web-server
+    name: web-server
+    volumeMounts:
+    #名为html的卷挂载在容器/user/share/nginx/html中
+    - name: html
+      mountPath: /usr/share/nginx/html
+      readOnly: true
+    ports:
+    - containerPort: 80
+      protocol: TCP
+  #一个名为html的单独emptyDir卷。
+  volumes:
+  - name: html
+    emptyDir: {}
+```
+
+##### 指定用于 EMPTYDIR 的介质
+
+```yaml
+#指定基于 tmfs 文件系统（基于内存而非硬盘）创建。
+  volumes:
+  - name: html
+    emptyDir: 
+      medium: Memory
+```
+
+#### 6.2.2 使用 git 仓库作为 volumn
+
+> gitRepo 的挂载在 git 复制之后，容器启动之前。所以git 的更新在 rc 重启 pod 时生效。
+
+![gitRepo](gitRepo.png)
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gitrepo-volume-pod
+spec:
+  containers:
+  - image: nginx:alpine
+    name: web-server
+    volumeMounts:
+    - name: html
+      mountPath: /usr/share/nginx/html
+      readOnly: true
+    #指定容器暴露的协议
+    ports:
+    - containerPort: 80
+      protocol: TCP
+  #声明一个名为 html 的 volumn，这个 volumn 是一个 gitRepo
+  volumes:
+  - name: html
+    gitRepo:
+      repository: https://github.com/luksa/kubia-website-example.git
+      revision: master
+      #指定当前目录为git路径的根目录，不指定的话将会存在一个 kubia-website-example 的文件夹
+      directory: .
+```
+
+```bash
+k port-forward gitrepo-volume-pod 8080:80
+
+curl http://localhost:8080/
+#<html>
+#<body>
+#Hello there.
+#</body>
+#</html>
+```
+
+##### 介绍 sidecar 容器
+
+> **如果我们希望时刻保持 gitRepo 和 git 代码一致，我们通过增加一个 sidecar container 来实现。**
+>
+> git 同步进程不应该运行在与 nginx 相同的容器中，而是在第二个容器 -- **sidecar container**。
+>
+> 它是一种容器，增加了对 pod 主容器的操作。可以将一个 sidecar 添加到一个 pod 中，这样就可以使用现有的容器镜像，而不是将附加逻辑填入主应用程序的代码中，这会导致它过于复杂和不可用。
+
+### 6.3 访问工作节点文件系统上的文件
+
+> 一般 pod 不应该访问 node 的目录，因为这会导致 pod 和 node 绑定。
+
+#### 6.3.1 介绍 hostPath 卷
+
+![hostPath卷将工作节点上的文件或目录挂在到容器的文件系统中](hostPath卷将工作节点上的文件或目录挂在到容器的文件系统中.png)
+
+#### 6.3.2 检查使用 hostPath 卷的系统 pod
+
+```bash
+k describe po kindnet-bgpx8 --namespace kube-system
+
+#Volumes:
+#  cni-cfg:
+#    Type:          HostPath (bare host directory volume)
+#    Path:          /etc/cni/net.mk
+#    HostPathType:  DirectoryOrCreate
+#  xtables-lock:
+#    Type:          HostPath (bare host directory volume)
+#    Path:          /run/xtables.lock
+#    HostPathType:  FileOrCreate
+#  lib-modules:
+#    Type:          HostPath (bare host directory volume)
+#    Path:          /lib/modules
+#    HostPathType:
+#  kindnet-token-mtmvl:
+#    Type:        Secret (a volume populated by a Secret)
+#    SecretName:  kindnet-token-mtmvl
+#    Optional:    false1-(11-03 09:36:18','1450004069','0','0','ozEm3uFeSXWxa0h6t2PVqFw09_Hs','398','13','1','95874014','398032001','1','10','2','10','100','0')
+#
+```
+
+### 6.4 使用持久化存储
+
+> 1. 为了保证 pod 不和 node 绑定，我们需要通过 NAS 保证每个 pod 都可以访问我们的持久化存储。
+> 2. 因为我们使用 gcePersistentDisk，下面的 pod 是无法正常拉起的。
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: mongodb 
+spec:
+  #声明一个名字为mongodb-data，类型为gcePersistentDisk
+  #gcePersistentDisk 的 PD resource 类型是 mongondb，使用的文件系统是 ext4
+  volumes:
+  - name: mongodb-data
+    gcePersistentDisk:
+      pdName: mongodb
+      fsType: ext4
+  containers:
+  - image: mongo
+    name: mongodb
+    #将mongodb的镜像 mount 到 /data/db
+    volumeMounts:
+    - name: mongodb-data
+      mountPath: /data/db
+    ports:
+    - containerPort: 27017
+      protocol: TCP
+```
+
+![带有单个运行mongodb的容器的pod](带有单个运行mongodb的容器的pod.png)
+
+### 6.5 从底层存储技术解耦 pod
+
+#### 6.5.1 介绍持久卷和持久卷声明
+
+- PersistentVolume
+- PersistentVolumeClaim，指定最低容量要求和访问模式
+
+![持久卷由集群管理员提供，冰杯pod通过持久卷声明来消费](持久卷由集群管理员提供，冰杯pod通过持久卷声明来消费.png)
+
+#### 6.5.2 创建持久卷
+
+```yaml
+apiVersion: v1
+#声明PV
+kind: PersistentVolume
+metadata:
+  name: mongodb-pv
+spec:
+  #声明PV大小
+  capacity: 
+    storage: 1Gi
+  #访问模式
+  #the volume can be mounted as read-write by a single node. ReadWriteOnce access mode still can allow multiple pods to access the volume when the pods are running on the same node.
+  #the volume can be mounted as read-only by many nodes.
+  accessModes:
+    - ReadWriteOnce
+    - ReadOnlyMany
+  #PV将不执行清理和删除
+  persistentVolumeReclaimPolicy: Retain
+  hostPath:
+    path: /tmp/mongodb
+```
+
+![和集群节点一样，持久卷不属于任何命名空间，区别于pod和持久卷声明](和集群节点一样，持久卷不属于任何命名空间，区别于pod和持久卷声明.png)
+
+#### 6.5.3 通过创建 PVC 来获取持久卷
+
+##### 创建持久卷声明
+
+```yaml
+apiVersion: v1
+#声明PVC
+kind: PersistentVolumeClaim
+metadata:
+  name: mongodb-pvc 
+spec:
+  #PVC 的资源要求
+  resources:
+    requests:
+      storage: 1Gi
+  accessModes:
+  - ReadWriteOnce
+  #和动态配置有关
+  storageClassName: ""
+```
+
+```bash
+#可以看到 PVC 和 PV 的状态都已经变成 Bound 了。
+
+k get pvc
+#NAME          STATUS   VOLUME       CAPACITY   ACCESS MODES   STORAGECLASS   AGE
+#mongodb-pvc   Bound    mongodb-pv   1Gi        RWO,ROX                       105s
+
+k get pv
+#NAME         CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS   CLAIM                 STORAGECLASS   REASON   AGE
+#mongodb-pv   1Gi        RWO,ROX        Retain           Bound    default/mongodb-pvc                           9m45s
+```
+
+#### 6.5.4 在 pod 中使用 PVC
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: mongodb 
+spec:
+  containers:
+  - image: mongo
+    name: mongodb
+    volumeMounts:
+    - name: mongodb-data
+      mountPath: /data/db
+    ports:
+    - containerPort: 27017
+      protocol: TCP
+  #使用 PVC
+  volumes:
+  - name: mongodb-data
+    persistentVolumeClaim:
+      claimName: mongodb-pvc
+```
+
+##### 访问 mongo
+
+```bash
+k exec -it mongodb -- mongo
+
+use mystore
+db.foo.insert({name:'foo'})
+db.foo.find()
+#{ "_id" : ObjectId("618205f0c383207666c6bdbb"), "name" : "foo" }
+```
+
+#### 6.5.5 了解使用 PV 和 PVC 的好处
+
+> 直接使用的话，pod 和基础设施耦合了，在例子中，我们就必须使用GCE持久磁盘；
+>
+> 通过PVC和PV使用的话，我们的 pod 是可复用的，当需要修改基础设施的时候，只需要修改 PV 即可。
+
+![直接使用与通过PVC和PV使用GCE持久磁盘](直接使用与通过PVC和PV使用GCE持久磁盘.png)
+
+#### 6.5.6 回收 PV
+
+> 通过 persistentVolumeReclaimPolicy 来控制持久卷的行为。
+
+```bash
+#删除 pod
+k delete pods mongodb
+#删除 pvc
+k delete pvc mongodb-pvc
+
+#重新创建pvc和pod
+k create -f mongodb-pvc.yaml
+k create -f mongodb-pod-pvc.yaml
+
+#我们发现 pvc 的状态是 pending，因为 pv 还没有清理。
+k get pvc
+#NAME          STATUS    VOLUME   CAPACITY   ACCESS MODES   STORAGECLASS   AGE
+#mongodb-pvc   Pending
+
+#pv 的状态是 released 而不是 available
+k get pv
+#NAME         CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS     CLAIM                 STORAGECLASS   REASON   AGE
+#mongodb-pv   1Gi        RWO,ROX        Retain           Released   default/mongodb-pvc                           176m
+```
+
+### 6.6 pv 的动态卷配置
+
+> - StorageClass
+> - provisioner
+
+#### 6.6.1 通过 StorageClass 资源定义可用存储类型
+
+> StorageClass 指定当 pvc 请求时应该使用哪个程序来提供 pv。
+>
+> - sc.provisioner:Provisioner indicates the type of the provisioner.
+> - sc.parameters:Parameters holds the parameters for the provisioner that should create volumes of this storage class.
+
+```yaml
+apiVersion: storage.k8s.io/v1
+#指定类型为StorageClass
+kind: StorageClass
+metadata:
+  name: fast
+#用于配置 pv 的卷插件
+provisioner: k8s.io/minikube-hostpath
+#传递给parameters的参数
+parameters:
+  type: pd-ssd
+```
+
+#### 6.6.2 请求 pvc 中的存储类
+
+> 创建声明时，pv 由 `fast` StorageClass 资源中引用的 `provisioner` 创建。
+
+```yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mongodb-pvc 
+spec:
+  #指定 StorageClass
+  storageClassName: fast
+  resources:
+    requests:
+      storage: 100Mi
+  accessModes:
+    - ReadWriteOnce
+```
+
+##### 创建一个没有指定存储类别的 PVC
+
+> 不设置 storageClassName 将使用没有指定存储类别的 PVC
+
+```yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mongodb-pvc2 
+spec:
+  resources:
+    requests:
+      storage: 100Mi
+  accessModes:
+    - ReadWriteOnce
+```
+
+##### 强制将 PVC 绑定到预配置的其中一个 PV
+
+> 如果希望PVC使用预先配置的PV，请将 storageClassName 设置为 ""。
+>
+> storageClassName 声明为 "" 将禁用动态配置。
+
+```bash
+#可以看到
+#设置 storageClassName: "" 的将不使用 StorageClass 而是匹配符合 PVC 条件的 PV
+#不设置 storageClassName 的将使用 StorageClass: standard
+#设置 storageClassName: fast 的将使用 storageClassName: fast
+k. get pv
+#NAME                 CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS     CLAIM                    STORAGECLASS   REASON   AGE
+#mongodb-pv           1Gi        RWO,ROX        Retain           Bound      default/mongodb-pvc                              34s
+#pvc-2ed965e5-5731-   100Mi      RWO            Delete           Bound      default/mongodb-pvc2     standard                30m
+#pvc-6d13f5e1-ac80-   100Mi      RWO            Delete           Released   default/mongodb-pvc      fast                    4h7m
+#pvc-6ef6feed-dde1-   100Mi      RWO            Delete           Bound      default/mongodb-pvc-dp   fast                    14m
+```
+
+![PV动态配置](PV动态配置.png)
 
 
 
