@@ -36,3 +36,4 @@
 34. consul
 35. `[TODO] Raft`
 36. k8s
+37. [Exploring Istio by example](https://octopus.com/blog/istio/the-sample-application)
