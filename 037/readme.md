@@ -1,6 +1,8 @@
-# Exploring Istio by example
+#### istio
 
-## 获取 istio gateway NodePort 地址
+## istio example
+
+### 获取 istio gateway NodePort 地址
 
 ```bash
 #端口
@@ -15,9 +17,9 @@ echo "$GATEWAY_URL"
 #192.168.99.101:32440
 ```
 
-## http service
+### http service
 
-### Dockerfile
+#### Dockerfile
 
 ```dockerfile
 FROM node:7
@@ -43,7 +45,7 @@ var www = http.createServer(handler);
 www.listen(8080);
 ```
 
-### Dokcerfile
+#### Dokcerfile
 
 ```dockerfile
 FROM node:7
@@ -51,7 +53,7 @@ ADD app.js /app.js
 ENTRYPOINT ["node", "app-v2.js"]
 ```
 
-### app-v2.js
+#### app-v2.js
 
 ```javascript
 const http = require('http');
@@ -69,7 +71,7 @@ var www = http.createServer(handler);
 www.listen(8080);
 ```
 
-### 打包镜像
+#### 打包镜像
 
 ```bash
 # 针对 v1 和 v2 分别打包镜像
@@ -82,9 +84,9 @@ docker tag kubia-v1 mirrors.tencent.com/ieg-data-public-test/kubia-v2:latest
 sudo docker push mirrors.tencent.com/ieg-data-public-test/kubia-v2:latest
 ```
 
-## kubernetes
+### kubernetes
 
-### v1 
+#### v1 
 
 ```yaml
 apiVersion: apps/v1
@@ -114,7 +116,7 @@ spec:
         name: kubia-server
 ```
 
-### v2
+#### v2
 
 ```yaml
 apiVersion: apps/v1
@@ -144,7 +146,7 @@ spec:
         name: kubia-server-v2
 ```
 
-### service
+#### service
 
 >service 绑定到 `kubia-server-v1` 和 `kubia-server-v2`的pod。
 >
@@ -176,9 +178,9 @@ spec:
     tenc-service: kubia-server
 ```
 
-## istio
+### istio
 
-### gateway
+#### gateway
 
 ```yaml
 apiVersion: networking.istio.io/v1alpha3
@@ -198,7 +200,7 @@ spec:
     - "*"
 ```
 
-### VirtualService
+#### VirtualService
 
 ```yaml
 apiVersion: networking.istio.io/v1alpha3
@@ -226,7 +228,7 @@ spec:
       weight: 50
 ```
 
-### DestinationRule
+#### DestinationRule
 
 ```yaml
 apiVersion: networking.istio.io/v1beta1
