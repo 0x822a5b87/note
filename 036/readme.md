@@ -2495,15 +2495,448 @@ k. get pv
 
 ![PV动态配置](PV动态配置.png)
 
+## 7. ConfigMap 和 Secret: 配置应用程序
 
+### 7.1 配置容器化应用程序
 
+> 为什么很多时候 docker 镜像通过环境变量传递配置参数?
+>
+> 1. 将配置文件打入镜像,这种类似于硬编码,每次变更需要重新 build 镜像；
+> 2. 挂载卷,但是这种方式需要保证配置环境在容器启动之前写入到卷中。
 
+### 7.2 向容器传递命令行参数
 
+#### 7.2.1 在 docker 中定义命令与参数
 
+##### 了解 ENTRYPOINT 和 CMD
 
+[Dockerfile: ENTRYPOINT和CMD的区别](https://zhuanlan.zhihu.com/p/30555962)
 
+> - 共同点
+>   - ENTRYPOINT 和 CMD 都可以用来在 docker 镜像构建的过程中执行指令
+> - 不同点
+>   - CMD 更容易在 `docker run` 的过程中修改,而 ENTRYPOINT 需要通过 `--entrypoint` 覆盖
 
+> 1. 永远使用 `ENTRYPOINT ["/bin/ping","-c","3"]` 这种 exec 表示法,因为 shell 表示法的主进程(PID=1) 是 shell 进程,而我们要启动的主进程反而是通过 shell 进程启动的.
+> 2. `ENTRYPOINT` 和 `CMD` 可以混用,下面的例子中，CMD 将作为 ENTRYPOINT 的参数。
 
+```docker
+FROM ubuntu:trusty
+
+ENTRYPOINT ["/bin/ping","-c","3"]
+CMD ["localhost"] 
+```
+
+> 容器中运行的完整指令由两部分组成:命令与参数
+>
+> - ENTRYPOINT 定义容器启动时被调用的可执行程序;
+> - CMD 指定传递给 ENTRYPOINT 的参数.
+
+##### 可配置化 fortune 镜像中的间隔参数
+
+```bash
+#!/bin/bash
+trap "exit" SIGINT
+
+INTERVAL=$1
+echo Configured to generate new fortune every $INTERVAL seconds
+
+mkdir -p /var/htdocs
+
+while :
+do
+  echo $(date) Writing fortune to /var/htdocs/index.html
+  /usr/games/fortune > /var/htdocs/index.html
+  sleep $INTERVAL
+done
+```
+
+```dockerfi
+FROM ubuntu:latest
+
+RUN sed -i s@/archive.ubuntu.com/@/mirrors.aliyun.com/@g /etc/apt/sources.list
+RUN apt-get clean
+RUN apt-get update
+RUN apt-get -y install fortune
+
+ADD fortuneloop.sh /bin/fortuneloop.sh
+
+RUN chmod 755 /bin/fortuneloop.sh
+
+ENTRYPOINT ["/bin/fortuneloop.sh"]
+CMD ["10"]
+```
+
+```bash
+docker build -t docker.io/luksa/fortune:args .
+
+docker push docker.io/luksa/fortune:args
+
+docker run -it docker.io/luksa/fortune:args
+#Configured to generate new fortune every 10 seconds
+#Mon Nov 8 07:14:25 UTC 2021 Writing fortune to /var/htdocs/index.html
+
+docker run -it docker.io/luksa/fortune:args 15
+#Configured to generate new fortune every 15 seconds
+#Mon Nov 8 07:16:18 UTC 2021 Writing fortune to /var/htdocs/index.html
+```
+
+#### 7.2.2 在 kubernetes 中覆盖命令和参数
+
+> ENTRYPOINT 和 CMD 都可以被覆盖。
+
+| Docker     | Kubernetes |
+| ---------- | ---------- |
+| ENTRYPOINT | command    |
+| CMD        | args       |
+
+```yaml
+kind: Pod
+spec:
+  containers:
+    - image: som/image
+      command: ["/bin/command"]
+      args: ["arg1", "arg2", "arg3"]
+```
+
+##### 用自定义间隔值运行 fortune pod
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: fortune2s
+spec:
+  containers:
+  - image: luksa/fortune:args
+    #通过 args 修改参数
+    args: ["2"]
+    name: html-generator
+    #挂载卷
+    volumeMounts:
+    - name: html
+      mountPath: /var/htdocs
+  - image: nginx:alpine
+    name: web-server
+    volumeMounts:
+    - name: html
+      mountPath: /usr/share/nginx/html
+      readOnly: true
+    ports:
+    - containerPort: 80
+      protocol: TCP
+  #声明卷
+  volumes:
+  - name: html
+    emptyDir: {}
+```
+
+### 7.3 为容器设置环境变量
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: fortune-env
+spec:
+  containers:
+  - image: luksa/fortune:env
+    env:
+    # 环境变量
+    - name: INTERVAL
+      value: "30"
+    name: html-generator
+    volumeMounts:
+    - name: html
+      mountPath: /var/htdocs
+  - image: nginx:alpine
+    name: web-server
+    volumeMounts:
+    - name: html
+      mountPath: /usr/share/nginx/html
+      readOnly: true
+    ports:
+    - containerPort: 80
+      protocol: TCP
+  volumes:
+  - name: html
+    emptyDir: {}
+```
+
+#### 7.3.2 引用其他环境变量
+
+```yaml
+env:
+- name: FIRST_VAR
+  value : "foo"
+- name: SECOND_VAR
+  value: "$(FIRST_VAR)bar"
+```
+
+### 7.4 ConfigMap 解耦配置
+
+#### 7.4.1 ConfigMap 介绍
+
+> ConfigMap 是 kubernetes 提供的单独的资源对象,通过环境变量或者卷文件传递给容器.
+
+![ConfigMap 使用环境变量](ConfigMap 使用环境变量.png)
+
+#### 7.4.2 创建 ConfigMap
+
+```bash
+# create ConfigMap
+k create configmap fortune-config --from-literal=sleep-interval=25
+
+k create configmap test-fortune-config --from-literal=foo=bar --from-literal=bar=foo --from-literal=on=two
+```
+
+![ConfigMap 实例](ConfigMap 实例.png)
+
+```bash
+k get configmaps fortune-config -o yaml
+```
+
+##### 从内容文件创建 ConfigMap
+
+```bash
+# from config
+k create configmap my-config --from-file=config-file.conf
+```
+
+#### 7.4.3 从容器传递 ConfigMap 作为环境变量
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: fortune-env-from-configmap
+spec:
+  containers:
+  - image: luksa/fortune:env
+    env:
+    #设置环境变量 INTERVAL
+    - name: INTERVAL
+      valueFrom: 
+        #用 ConfigMap 初始化
+        configMapKeyRef:
+          #引用的 ConfigMap名称
+          name: fortune-config
+          #ConfigMap 下对应的键的值
+          key: sleep-interval
+# ...
+```
+
+#### 7.4.4 一次性传递 ConfigMap 的所有条目作为环境变量
+
+> 假设 ConfigMap 包含了 FOO, BAR, FOO-BAR 
+
+```yaml
+spec:
+  containers:
+  - image: some-image
+    # 使用 envFrom 字段而不是 env 字段
+    envFrom:
+    #所有环境变量均包含前缀 CONFIG_
+    - prefix: CONFIG_
+      configMapRef:
+        #引用名为 my-config-map 的 ConfigMap
+        name: my-config-map
+```
+
+> 对于上面的配置文件,我们就得到了 CONFIG_FOO, CONFIG_BAR
+>
+> 但是不会有 **CONFIG_FOO-BAR**,因为这不是一个合法的环境变量名,**创建环境变量时会忽略并且`不会`发出事件通知**
+
+#### 7.4.5 传递 ConfigMap 条目作为命令行参数
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: fortune-args-from-configmap
+spec:
+  containers:
+  - image: luksa/fortune:args
+    env:
+    - name: INTERVAL
+      valueFrom: 
+        configMapKeyRef:
+          name: fortune-config
+          key: sleep-interval
+    #在参数设置中引用环境变量
+    args: ["$(INTERVAL)"]
+#...
+```
+
+#### 7.4.6 使用 configMap 卷将条目暴露为文件
+
+> 环境变量和参数适用于轻量的场景.configMap 中可以通过一种叫 configMap 的卷来实现重量级的配置功能.
+
+##### my-nginx-config.conf
+
+```config
+
+server {
+    listen              80;
+    server_name         www.kubia-example.com;
+
+    gzip on;
+    gzip_types text/plain application/xml;
+
+    location / {
+        root   /usr/share/nginx/html;
+        index  index.html index.htm;
+    }
+
+}
+```
+
+##### sleep-interval
+
+```txt
+25
+```
+
+```bash
+k create configmap fortune-config --from-file=../configmap-files
+
+k get cm fortune-config -o yaml
+#apiVersion: v1
+#data:
+#  my-nginx-config.conf: |
+#    server {
+#        listen              80;
+#        server_name         www.kubia-example.com;
+#
+#        gzip on;
+#        gzip_types text/plain application/xml;
+#
+#        location / {
+#            root   /usr/share/nginx/html;
+#            index  index.html index.htm;
+#        }
+#
+#    }
+#  sleep-interval: |
+#    25
+#kind: ConfigMap
+#metadata:
+#  creationTimestamp: "2021-11-08T09:59:37Z"
+#  managedFields:
+#  - apiVersion: v1
+#    fieldsType: FieldsV1
+#    fieldsV1:
+#      f:data:
+#        .: {}
+#        f:my-nginx-config.conf: {}
+#        f:sleep-interval: {}
+#    manager: kubectl-create
+#    operation: Update
+#    time: "2021-11-08T09:59:37Z"
+#  name: fortune-config
+#  namespace: default
+#  resourceVersion: "241091"
+#  uid: c759fb6e-8464-4513-9e24-4b5b8b950691
+```
+
+##### 在卷内使用 ConfigMap 的条目
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: fortune-configmap-volume
+spec:
+  containers:
+  - image: luksa/fortune:env
+    #
+    env:
+    - name: INTERVAL
+      valueFrom:
+        #引用 ConfigMap fortune-config 的 sleep-interval
+        configMapKeyRef:
+          name: fortune-config
+          key: sleep-interval
+    name: html-generator
+    volumeMounts:
+    - name: html
+      mountPath: /var/htdocs
+  - image: nginx:alpine
+    name: web-server
+    volumeMounts:
+    - name: html
+      mountPath: /usr/share/nginx/html
+      readOnly: true
+    #挂在 configMap 到对应目录
+    - name: config
+      #nginx 会自动的载入 /etc/nginx/conf.d 目录下的所有 .conf 配置文件
+      mountPath: /etc/nginx/conf.d
+      readOnly: true
+    #挂在 configMap 到对应目录
+    - name: config
+      mountPath: /tmp/whole-fortune-config-volume
+      readOnly: true
+    ports:
+      - containerPort: 80
+        name: http
+        protocol: TCP
+  volumes:
+  - name: html
+    emptyDir: {}
+  #使用 ConfigMap volume
+  - name: config
+    configMap:
+      name: fortune-config
+```
+
+##### 卷内暴露指定的 ConfigMap 条目
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: fortune-configmap-volume-with-items
+spec:
+  containers:
+  - image: luksa/fortune:env
+    name: html-generator
+    volumeMounts:
+    - name: html
+      mountPath: /var/htdocs
+  - image: nginx:alpine
+    name: web-server
+    volumeMounts:
+    - name: html
+      mountPath: /usr/share/nginx/html
+      readOnly: true
+    - name: config
+      mountPath: /etc/nginx/conf.d/
+      readOnly: true
+    ports:
+    - containerPort: 80
+      protocol: TCP
+  volumes:
+  - name: html
+    emptyDir: {}
+  - name: config
+    configMap:
+      #选择包含在卷中的条目
+      name: fortune-config
+      items:
+      #该键对应的条目被包含
+      - key: my-nginx-config.conf
+        #条目的值被存储在该文件中
+        path: gzip.conf
+```
+
+```bash
+k exec fortune-configmap-volume-with-items -c web-server -- ls /etc/nginx/conf.d
+#gzip.conf
+```
+
+### 7.5 使用 Secret 给容器传递敏感数据
+
+> Secret 和 ConfigMap 类似,也是键值对.
 
 
 
