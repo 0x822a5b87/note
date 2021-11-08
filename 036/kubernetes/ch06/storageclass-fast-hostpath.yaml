@@ -1,0 +1,9 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: fast
+#用于配置 pv 的卷插件
+provisioner: k8s.io/minikube-hostpath
+#传递给parameters的参数
+parameters:
+  type: pd-ssd

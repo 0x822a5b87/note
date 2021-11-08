@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Endpoints
+# endpoint 的名称必须和服务的名称相匹配
+metadata:
+  name: external-service
+subsets:
+  - addresses:
+    - ip: 11.11.11.11
+    - ip: 22.22.22.22
+    ports:
+    - port: 80

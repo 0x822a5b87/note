@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubia-server-v2
+  #May match selectors of replication controllers and services
+  labels:
+    tenc-service: kubia-server
+    version: v2
+spec:
+  replicas: 1
+  #Label selector for pods. Existing ReplicaSets whose pods are selected by this will be the ones affected by this deployment. It must match the pod template's labels.
+  selector:
+    matchLabels:
+      tenc-service: kubia-server
+      version: v2
+  template:
+    metadata:
+      #May match selectors of replication controllers and services.
+      labels:
+        tenc-service: kubia-server
+        version: v2
+    spec:
+      containers:
+      - image: mirrors.tencent.com/ieg-data-public-test/kubia-v2:latest
+        name: kubia-server-v2

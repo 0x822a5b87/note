@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: kubia-headless
+spec:
+  # 使得服务成为 headless 服务
+  clusterIP: None
+  ports:
+  - port: 80
+    name: http
+    targetPort: 8080
+  selector:
+    app: kubia

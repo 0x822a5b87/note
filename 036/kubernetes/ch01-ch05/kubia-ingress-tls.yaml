@@ -1,0 +1,24 @@
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: kubia-tls
+spec:
+  # 配置 tls
+  tls:
+  - hosts:
+    # 接受来自 kubia.example.com 主机的 tls 连接
+    - kubia.example.com
+    # 从 tls-secret 中获得之前创建的私钥和证书
+    secretName: tls-secret
+  rules:
+  - host: kubia.example.com
+    http:
+      paths:
+        #        - path: /
+        #          backend:
+        #            serviceName: kubia
+        #            servicePort: 80
+        - path: /kubia-tls
+          backend:
+            serviceName: kubia
+            servicePort: 80

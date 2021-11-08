@@ -1,0 +1,33 @@
+apiVersion: v1
+#创建一个pod
+kind: Pod
+#Pod 名是 fortune
+metadata:
+  name: fortune
+  labels:
+    app: fortune
+spec:
+  containers:
+  - image: luksa/fortune
+    #容器名是html-generator
+    name: html-generator
+    #名为html的卷挂载在容器/var/htdocs中
+    volumeMounts:
+    - name: html
+      mountPath: /var/htdocs
+  - image: nginx:alpine
+    #荣启明是web-server
+    name: web-server
+    volumeMounts:
+    #名为html的卷挂载在容器/user/share/nginx/html中
+    - name: html
+      mountPath: /usr/share/nginx/html
+      readOnly: true
+    ports:
+    - containerPort: 80
+      protocol: TCP
+  #一个名为html的单独emptyDir卷。
+  volumes:
+  - name: html
+    emptyDir: {}
+

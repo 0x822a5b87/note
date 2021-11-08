@@ -1,0 +1,322 @@
+# yaml 描述文件所使用的 kubernetes API 版本
+apiVersion: v1
+# kubernetes 对象资源类型
+kind: Pod
+# pod 元数据（名称、标签和注解等）
+metadata:
+  creationTimestamp: "2021-10-27T07:33:55Z"
+  labels:
+    run: kubia
+  managedFields:
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:metadata:
+        f:labels:
+          .: {}
+          f:run: {}
+      f:spec:
+        f:containers:
+          k:{"name":"kubia"}:
+            .: {}
+            f:image: {}
+            f:imagePullPolicy: {}
+            f:name: {}
+            f:ports:
+              .: {}
+              k:{"containerPort":8080,"protocol":"TCP"}:
+                .: {}
+                f:containerPort: {}
+                f:protocol: {}
+            f:resources: {}
+            f:terminationMessagePath: {}
+            f:terminationMessagePolicy: {}
+        f:dnsPolicy: {}
+        f:enableServiceLinks: {}
+        f:restartPolicy: {}
+        f:schedulerName: {}
+        f:securityContext: {}
+        f:terminationGracePeriodSeconds: {}
+    manager: kubectl-run
+    operation: Update
+    time: "2021-10-27T07:33:55Z"
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:status:
+        f:conditions:
+          k:{"type":"ContainersReady"}:
+            .: {}
+            f:lastProbeTime: {}
+            f:lastTransitionTime: {}
+            f:status: {}
+            f:type: {}
+          k:{"type":"Initialized"}:
+            .: {}
+            f:lastProbeTime: {}
+            f:lastTransitionTime: {}
+            f:status: {}
+            f:type: {}
+          k:{"type":"Ready"}:
+            .: {}
+            f:lastProbeTime: {}
+            f:lastTransitionTime: {}
+            f:status: {}
+            f:type: {}
+        f:containerStatuses: {}
+        f:hostIP: {}
+        f:phase: {}
+        f:podIP: {}
+        f:podIPs:
+          .: {}
+          k:{"ip":"10.244.2.2"}:
+            .: {}
+            f:ip: {}
+        f:startTime: {}
+    manager: kubelet
+    operation: Update
+    time: "2021-10-27T07:35:16Z"
+  name: kubia
+  namespace: default
+  resourceVersion: "1110"
+  uid: 29ed7476-3fff-4ddb-93c8-90a1fa81fda9
+# pod 规格/内容（pod 的容器列表、volumn 等）
+spec:
+  containers:
+  - image: luksa/kubia
+    imagePullPolicy: Always
+    name: kubia
+    ports:
+    - containerPort: 8080
+      protocol: TCP
+    resources: {}
+    terminationMessagePath: /dev/termination-log
+    terminationMessagePolicy: File
+    volumeMounts:
+    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+      name: default-token-zmmm2
+      readOnly: true
+  dnsPolicy: ClusterFirst
+  enableServiceLinks: true
+  nodeName: minikube-m03
+  preemptionPolicy: PreemptLowerPriority
+  priority: 0
+  restartPolicy: Always
+  schedulerName: default-scheduler
+  securityContext: {}
+  serviceAccount: default
+  serviceAccountName: default
+  terminationGracePeriodSeconds: 30
+  tolerations:
+  - effect: NoExecute
+    key: node.kubernetes.io/not-ready
+    operator: Exists
+    tolerationSeconds: 300
+  - effect: NoExecute
+    key: node.kubernetes.io/unreachable
+    operator: Exists
+    tolerationSeconds: 300
+  volumes:
+  - name: default-token-zmmm2
+    secret:
+      defaultMode: 420
+      secretName: default-token-zmmm2
+# pod 机器内部容器的详细状态
+# yaml 描述文件所使用的 kubernetes API 版本
+apiVersion: v1
+# kubernetes 对象资源类型
+kind: Pod
+# pod 元数据（名称、标签和注解等）
+metadata:
+  creationTimestamp: "2021-10-27T07:33:55Z"
+  labels:
+    run: kubia
+  managedFields:
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:metadata:
+        f:labels:
+          .: {}
+          f:run: {}
+      f:spec:
+        f:containers:
+          k:{"name":"kubia"}:
+            .: {}
+            f:image: {}
+            f:imagePullPolicy: {}
+            f:name: {}
+            f:ports:
+              .: {}
+              k:{"containerPort":8080,"protocol":"TCP"}:
+                .: {}
+                f:containerPort: {}
+                f:protocol: {}
+            f:resources: {}
+            f:terminationMessagePath: {}
+            f:terminationMessagePolicy: {}
+        f:dnsPolicy: {}
+        f:enableServiceLinks: {}
+        f:restartPolicy: {}
+        f:schedulerName: {}
+        f:securityContext: {}
+        f:terminationGracePeriodSeconds: {}
+    manager: kubectl-run
+    operation: Update
+    time: "2021-10-27T07:33:55Z"
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:status:
+        f:conditions:
+          k:{"type":"ContainersReady"}:
+            .: {}
+            f:lastProbeTime: {}
+            f:lastTransitionTime: {}
+            f:status: {}
+            f:type: {}
+          k:{"type":"Initialized"}:
+            .: {}
+            f:lastProbeTime: {}
+            f:lastTransitionTime: {}
+            f:status: {}
+            f:type: {}
+          k:{"type":"Ready"}:
+            .: {}
+            f:lastProbeTime: {}
+            f:lastTransitionTime: {}
+            f:status: {}
+            f:type: {}
+        f:containerStatuses: {}
+        f:hostIP: {}
+        f:phase: {}
+        f:podIP: {}
+        f:podIPs:
+          .: {}
+          k:{"ip":"10.244.2.2"}:
+            .: {}
+            f:ip: {}
+        f:startTime: {}
+    manager: kubelet
+    operation: Update
+    time: "2021-10-27T07:35:16Z"
+  name: kubia
+  namespace: default
+  resourceVersion: "1110"
+  uid: 29ed7476-3fff-4ddb-93c8-90a1fa81fda9
+# pod 规格/内容（pod 的容器列表、volumn 等）
+spec:
+  containers:
+  - image: luksa/kubia
+    imagePullPolicy: Always
+    name: kubia
+    ports:
+    - containerPort: 8080
+      protocol: TCP
+    resources: {}
+    terminationMessagePath: /dev/termination-log
+    terminationMessagePolicy: File
+    volumeMounts:
+    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+      name: default-token-zmmm2
+      readOnly: true
+  dnsPolicy: ClusterFirst
+  enableServiceLinks: true
+  nodeName: minikube-m03
+  preemptionPolicy: PreemptLowerPriority
+  priority: 0
+  restartPolicy: Always
+  schedulerName: default-scheduler
+  securityContext: {}
+  serviceAccount: default
+  serviceAccountName: default
+  terminationGracePeriodSeconds: 30
+  tolerations:
+  - effect: NoExecute
+    key: node.kubernetes.io/not-ready
+    operator: Exists
+    tolerationSeconds: 300
+  - effect: NoExecute
+    key: node.kubernetes.io/unreachable
+    operator: Exists
+    tolerationSeconds: 300
+  volumes:
+  - name: default-token-zmmm2
+    secret:
+      defaultMode: 420
+      secretName: default-token-zmmm2
+# pod 机器内部容器的详细状态
+status:
+  conditions:
+  - lastProbeTime: null
+    lastTransitionTime: "2021-10-27T07:33:55Z"
+    status: "True"
+    type: Initialized
+  - lastProbeTime: null
+    lastTransitionTime: "2021-10-27T07:35:16Z"
+    status: "True"
+    type: Ready
+  - lastProbeTime: null
+    lastTransitionTime: "2021-10-27T07:35:16Z"
+    status: "True"
+    type: ContainersReady
+  - lastProbeTime: null
+    lastTransitionTime: "2021-10-27T07:33:55Z"
+    status: "True"
+    type: PodScheduled
+  containerStatuses:
+  - containerID: docker://56a21a88860f2a9afe9a4eaf66ae69f20eac03d238ae8d11738c052cdf5e1ae6
+    image: luksa/kubia:latest
+    imageID: docker-pullable://luksa/kubia@sha256:3f28e304dc0f63dc30f273a4202096f0fa0d08510bd2ee7e1032ce600616de24
+    lastState: {}
+    name: kubia
+    ready: true
+    restartCount: 0
+    started: true
+    state:
+      running:
+        startedAt: "2021-10-27T07:35:16Z"
+  hostIP: 192.168.49.4
+  phase: Running
+  podIP: 10.244.2.2
+  podIPs:
+  - ip: 10.244.2.2
+  qosClass: BestEffort
+  startTime: "2021-10-27T07:33:55Z"
+status:
+  conditions:
+  - lastProbeTime: null
+    lastTransitionTime: "2021-10-27T07:33:55Z"
+    status: "True"
+    type: Initialized
+  - lastProbeTime: null
+    lastTransitionTime: "2021-10-27T07:35:16Z"
+    status: "True"
+    type: Ready
+  - lastProbeTime: null
+    lastTransitionTime: "2021-10-27T07:35:16Z"
+    status: "True"
+    type: ContainersReady
+  - lastProbeTime: null
+    lastTransitionTime: "2021-10-27T07:33:55Z"
+    status: "True"
+    type: PodScheduled
+  containerStatuses:
+  - containerID: docker://56a21a88860f2a9afe9a4eaf66ae69f20eac03d238ae8d11738c052cdf5e1ae6
+    image: luksa/kubia:latest
+    imageID: docker-pullable://luksa/kubia@sha256:3f28e304dc0f63dc30f273a4202096f0fa0d08510bd2ee7e1032ce600616de24
+    lastState: {}
+    name: kubia
+    ready: true
+    restartCount: 0
+    started: true
+    state:
+      running:
+        startedAt: "2021-10-27T07:35:16Z"
+  hostIP: 192.168.49.4
+  phase: Running
+  podIP: 10.244.2.2
+  podIPs:
+  - ip: 10.244.2.2
+  qosClass: BestEffort
+  startTime: "2021-10-27T07:33:55Z"

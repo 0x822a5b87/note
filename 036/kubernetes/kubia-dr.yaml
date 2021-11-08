@@ -1,0 +1,14 @@
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: kubia-dr
+  namespace: default
+spec:
+  host: kubia-service.default.svc.cluster.local            # 指定 K8S 中的 svc 资源名字
+  subsets:
+  - labels:
+      version: v1
+    name: dr-v1
+  - labels:
+      version: v2
+    name: dr-v2

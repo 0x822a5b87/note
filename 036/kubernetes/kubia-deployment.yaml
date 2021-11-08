@@ -1,0 +1,18 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-server-v1
+  labels:
+    tenc-service: my-server1
+    version: v1
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        tenc-service: my-server1
+        version: v1
+    spec:
+      containers:
+      - image: mirrors.tencent.com/ieg-data-public-test/kubia:latest
+        name: container-1

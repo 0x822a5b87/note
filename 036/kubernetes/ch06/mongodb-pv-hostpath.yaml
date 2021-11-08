@@ -1,0 +1,19 @@
+apiVersion: v1
+#声明PV
+kind: PersistentVolume
+metadata:
+  name: mongodb-pv
+spec:
+  #声明PV大小
+  capacity: 
+    storage: 1Gi
+  #访问模式
+  #the volume can be mounted as read-write by a single node. ReadWriteOnce access mode still can allow multiple pods to access the volume when the pods are running on the same node.
+  #the volume can be mounted as read-only by many nodes.
+  accessModes:
+    - ReadWriteOnce
+    - ReadOnlyMany
+  #PV将不执行清理和删除
+  persistentVolumeReclaimPolicy: Retain
+  hostPath:
+    path: /tmp/mongodb

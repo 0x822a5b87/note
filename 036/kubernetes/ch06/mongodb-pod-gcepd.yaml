@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: mongodb 
+spec:
+  #声明一个名字为mongodb-data，类型为gcePersistentDisk
+  #gcePersistentDisk 的 PD resource 类型是 mongondb，使用的文件系统是 ext4
+  volumes:
+  - name: mongodb-data
+    gcePersistentDisk:
+      pdName: mongodb
+      fsType: ext4
+  containers:
+  - image: mongo
+    name: mongodb
+    #将mongodb的镜像 mount 到 /data/db
+    volumeMounts:
+    - name: mongodb-data
+      mountPath: /data/db
+    ports:
+    - containerPort: 27017
+      protocol: TCP

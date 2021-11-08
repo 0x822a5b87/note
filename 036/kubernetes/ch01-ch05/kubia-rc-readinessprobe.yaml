@@ -1,0 +1,28 @@
+apiVersion: v1
+# 这里定义了 rc
+kind: ReplicationController
+metadata:
+  name: kubia-rc-readiness-probe
+spec:
+  # pod 实例数量
+  replicas: 1
+  # selector 决定了 rc 的操作对象
+  selector:
+    app: kubia
+  # 创建新 pod 使用的模板
+  template:
+    metadata:
+      labels:
+        app: kubia
+    spec:
+      containers:
+        - name: kubia
+          image: luksa/kubia
+          ports:
+            - containerPort: 8080
+          # pod 中的每个容器都会有一个就绪探针
+          readinessProbe:
+            exec:
+              command:
+                - ls
+                - /var/ready
