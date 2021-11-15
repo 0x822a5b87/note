@@ -1,0 +1,30 @@
+apiVersion: apps/v1beta1
+kind: Deployment
+metadata:
+  name: kubia
+spec:
+  replicas: 3
+  # 设置 pod 至少需要运行成功 10s
+  minReadySeconds: 10
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      # 设置集群内最大不可以 pod 数
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      name: kubia
+      labels:
+        app: kubia
+    spec:
+      containers:
+      - image: luksa/kubia:v3
+        name: nodejs
+        readinessProbe:
+          # 就绪指针每秒执行一次
+          periodSeconds: 1
+          # http 指针
+          httpGet:
+            path: /
+            port: 8080

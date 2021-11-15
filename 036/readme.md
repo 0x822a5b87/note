@@ -3404,6 +3404,327 @@ func TestFakeClient(t *testing.T) {
 }
 ```
 
+## 9. Deployment： 声明式的升级应用
+
+> Deployment 是一种基于 ReplicaSet 的资源。
+
+### 9.1 更新运行在pod内的应用程序
+
+pod 在发布新版本时有两种方法：
+
+- 删除现有pod，创新新 pod
+- 创建新 pod，然后一次性删除老的 pod，或者按照顺序创建新的 pod，然后一次创建老的 pod
+
+两种方法都有一定的问题：
+
+1. 第一种方法会导致服务有一段时间不可用；
+2. 第二种方法会导致服务版本不一致，如果存在状态（比如写入数据库）可能会导致数据异常；
+
+#### 9.1.1 删除旧版本 pod，使用新版本 pod 替换
+
+> 如果可以接受短暂服务不可用，那可以使用这个方案
+
+#### 9.1.2 先创建新pod，再删除旧版本pod
+
+> 下面就是所谓的 **蓝绿部署**
+
+![将service流量从旧的pod迁移到新的pod](将service流量从旧的pod迁移到新的pod.png)
+
+> 滚动升级
+
+![滚动升级](滚动升级.png)
+
+### 9.2 使用 rc 实现自动的滚动升级
+
+> 这是一种相对过时的升级方式，不过不用引入新的概念。
+
+#### 9.2.1 运行第一个版本的应用
+
+```js
+// app.js v1
+const http = require('http');
+const os = require('os');
+
+console.log("Kubia server starting...");
+
+var handler = function(request, response) {
+  console.log("Received request from " + request.connection.remoteAddress);
+  response.writeHead(200);
+  response.end("This is v1 running in pod " + os.hostname() + "\n");
+};
+
+var www = http.createServer(handler);
+www.listen(8080);
+
+```
+
+```yaml
+apiVersion: v1
+kind: ReplicationController
+metadata:
+  name: kubia-v1
+spec:
+  replicas: 3
+  template:
+    metadata:
+      name: kubia
+      labels:
+        app: kubia
+    spec:
+      containers:
+      - image: luksa/kubia:v1
+        name: nodejs
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kubia
+spec:
+  type: LoadBalancer
+  selector:
+    app: kubia
+  ports:
+  - port: 80
+    targetPort: 8080
+```
+
+#### 9.2.2 使用 kubectl 来执行滚动升级
+
+##### 使用相同的 tag 推送更新过后的镜像
+
+> 如果使用了一个非 latest 的镜像 tag，例如 v1。那么 kubernetes 在先拉取本地缓存。也就是说，可能会导致变更无法生效。
+>
+> 可以设置容器的 `imagePullPolicy` 设置为 always
+
+```yaml
+# 滚动升级，不过 rolling-update lastest 已经废弃
+k rollout kubia-v1 kubia-v2 --image=luksa/kubia:v2
+```
+
+![开始滚动升级后的状态](开始滚动升级后的状态.png)
+
+##### 了解滚动升级前 kubectl 所执行的操作
+
+> 在滚动升级前，kubernetes 会修改这些属性：
+>
+> 1. 为 v2 rc 的 selector 增加 `deployment=xxx`，这是为了防止 v2 rc 匹配到老的 v1 pod
+> 2. 为 v1 rc 的 selector 增加 `deployment=yyy`，这是为了防止 v1 rc 匹配到 v2 pod
+> 3. 为 v1 pod 增加 `deployment=yyy`，防止 v1 rc 匹配不到 pod
+
+![滚动升级后新旧rc以及pod的详细状态](滚动升级后新旧rc以及pod的详细状态.png)
+
+##### 通过伸缩两个 rc 完成滚动升级
+
+> 不断的通过减小 v1 pod 的副本数，然后增大 v2 pod 的副本数。直到 v1 pod 副本数减小到 0.
+
+#### 9.2.3 为什么 rolling-update 过时了
+
+> 1. 这个过程会直接修改创建的对象（会修改 pod 和 rc 的标签）
+> 2. **kubectl 只是执行滚动升级的客户端**，例如：在上面的过程中，kubectl 会给服务端发送三次修改 v1 pod 副本数的命令，而不是 kubernetes master 执行的。
+
+### 9.3 使用 Deployment 声明式的升级应用
+
+![Deployment](./Deployment.png)
+
+> 为什么要在 rs 或者 rc 上引入一个对象？
+>
+> 因为在 <9.2> 的例子中，我们要升级一个应用的时候，需要引入一个额外的 rc，并协调两个 rc。
+>
+> Deployment 就是为了负责解决这个问题。
+
+#### 9.3.1 创建一个 Deployment
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubia
+spec:
+  replicas: 3
+  template:
+    metadata:
+      name: kubia
+      labels:
+        app: kubia
+    spec:
+      containers:
+      - image: luksa/kubia:v1
+        name: nodejs
+  selector:
+    matchLabels:
+      app: kubia
+```
+
+##### 创建 Deployment 资源
+
+```bash
+# --record 会记录历史版本号
+k create -f kubia-deployment-v1.yaml --record
+```
+
+##### 展示 Deployment 滚动过程中的状态
+
+```bash
+# 状态
+k rollout status deployment kubia
+```
+
+##### 了解 Deployment 如何创建 rs 以及 pod
+
+> rs 包含了 pod 模板的哈希值。
+
+```bash
+k get deploy -o wide --show-labels
+#kubia   3/3     3            3           138m   nodejs       luksa/kubia:v1   app=kubia   <none>
+
+
+k get rs -o wide --show-labels
+#kubia-74967b5695   3         3         3       140m   nodejs       luksa/kubia:v1   app=kubia,pod-template-hash=74967b5695   app=kubia,pod-template-hash=74967b5695
+
+k get pods -o wide --show-labels
+#kubia-74967b5695   3         3         3       139m   nodejs       luksa/kubia:v1   app=kubia,pod-template-hash=74967b5695   app=kubia,pod-template-hash=74967b5695
+```
+
+##### 通过 service 访问 pod
+
+> deploy 创建了 rs，rs 创建了 pod。
+>
+> deploy 通过 `app=kubia` 匹配 rs，rs 通过 `app=kubia,pod-template-hash=74967b5695` 来匹配 pods
+
+#### 9.3.2 升级 Deployment
+
+##### 不同的 Deployment 升级策略
+
+> - RollingUpdate（默认）
+> - Recreate
+
+##### 演示如何减慢滚动升级速度
+
+```bash
+k patch deploy kubia -p '{"spec": {"minReadySeconds": 10}}'
+```
+
+##### 触发滚动升级
+
+```bash
+#触发滚动升级
+#nodejs 是 deploy.spec.template.spec.containers.name
+k set image deployment kubia nodejs=luksa/kubia:v2
+```
+
+![为deploy内的pod模板指定新的镜像](为deploy内的pod模板指定新的镜像.png)
+
+##### Deployment 的优点
+
+> 注意，deployment 引用 ConfigMap 或者 Secret，更改 ConfigMap 或 Secret 不会触发升级操作。
+>
+> 可以创建一个新的 ConfigMap，并修改 pod 模板引用新的 ConfigMap 来实现更新。
+
+![滚动升级开始和结束时的deployment状态](滚动升级开始和结束时的deployment状态.png)
+
+#### 9.3.3 回滚deployment
+
+```bash
+# 部署 v3 版本
+k set image deployment kubia nodejs=luksa/kubia:v3
+
+# 查看回滚日志
+k rollout status deployment kubia
+
+# 回滚升级
+k rollout undo deployment kubia
+
+# 显示滚动升级历史
+k rollout history deployment kubia
+
+# 切换到指定版本
+k rollout undo deployment kubia --to-revision=1
+```
+
+#### 9.3.5 暂停滚动升级
+
+```bash
+# 滚动升级到 v4
+k set image deployment kubia nodejs=luksa/kubia:v4
+
+# 暂停滚动升级
+k rollout pause deployment kubia
+
+# 恢复滚动升级
+k rollout resume deployment kubia
+```
+
+#### 9.3.6 组织出错版本的滚动升级
+
+##### 了解 minReadySeconds 的用处
+
+> minReadySeconds 指定 pod 至少运行成功多久之后，才能将其视为可用。在这之前，滚动升级的过程不会继续。 
+
+##### 配置就绪指针阻止全部 v3 版本的滚动部署
+
+> pod 在状态 **保持就绪，并持续10s** 才会开始部署下一个 pod。
+
+```yaml
+apiVersion: apps/v1beta1
+kind: Deployment
+metadata:
+  name: kubia
+spec:
+  replicas: 3
+  # 设置 pod 至少需要运行成功 10s
+  minReadySeconds: 10
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      # 设置集群内最大不可以 pod 数
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      name: kubia
+      labels:
+        app: kubia
+    spec:
+      containers:
+      - image: luksa/kubia:v3
+        name: nodejs
+        readinessProbe:
+          # 就绪指针每秒执行一次
+          periodSeconds: 1
+          # http 指针
+          httpGet:
+            path: /
+            port: 8080
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
