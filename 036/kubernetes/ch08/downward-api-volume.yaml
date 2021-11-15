@@ -1,0 +1,58 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  #通过 downwardAPI 卷来暴露这些标签和注解
+  name: downward
+  labels:
+    foo: bar
+  annotations:
+    key1: value1
+    key2: |
+      multi
+      line
+      value
+spec:
+  containers:
+  - name: main
+    image: busybox
+    command: ["sleep", "9999999"]
+    resources:
+      requests:
+        cpu: 15m
+        memory: 100Ki
+      limits:
+        cpu: 100m
+        memory: 40Mi
+    #在 /etc/downward 下挂在 downward volume
+    volumeMounts:
+    - name: downward
+      mountPath: /etc/downward
+  volumes:
+  #通过将卷名设定为 downward 来定义一个 downwardAPI 卷
+  - name: downward
+    downwardAPI:
+      #将 manifest 文件中的 metadata.name 字段写入 podName
+      items:
+      - path: "podName"
+        fieldRef:
+          fieldPath: metadata.name
+      - path: "podNamespace"
+        fieldRef:
+          fieldPath: metadata.namespace
+      #pod 的标签将被保存到 /etc/downward/labels 文件中,因为 volume 被挂在在 /etc/downward 下
+      - path: "labels"
+        fieldRef:
+          fieldPath: metadata.labels
+      - path: "annotations"
+        fieldRef:
+          fieldPath: metadata.annotations
+      - path: "containerCpuRequestMilliCores"
+        resourceFieldRef:
+          containerName: main
+          resource: requests.cpu
+          divisor: 1m
+      - path: "containerMemoryLimitBytes"
+        resourceFieldRef:
+          containerName: main
+          resource: limits.memory
+          divisor: 1

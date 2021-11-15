@@ -2938,6 +2938,389 @@ k exec fortune-configmap-volume-with-items -c web-server -- ls /etc/nginx/conf.d
 
 > Secret 和 ConfigMap 类似,也是键值对.
 
+## 8. 从应用访问pod元数据以及其他资源
+
+### 8.1 通过 Downward API 传递元数据
+
+> Downward API 允许我们通过环境变量或者文件(在 downwardAPI 卷中)传递 pod 的元数据
+
+![DownwardAPI 通过环境变量或文件对外暴露 pod 元数据](DownwardAPI 通过环境变量或文件对外暴露 pod 元数据.png)
+
+#### 8.1.2 通过环境变量暴露元数据
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: downward
+spec:
+  containers:
+  - name: main
+    image: busybox
+    command: ["sleep", "9999999"]
+    resources:
+      requests:
+        cpu: 15m
+        memory: 100Ki
+      limits:
+        cpu: 100m
+        memory: 4Mi
+    env:
+    - name: POD_NAME
+      #引用 pod manifest 中的元数据名称字段,而不是设定一个具体的值
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.name
+    - name: POD_NAMESPACE
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.namespace
+    - name: POD_IP
+      valueFrom:
+        fieldRef:
+          fieldPath: status.podIP
+    - name: NODE_NAME
+      valueFrom:
+        fieldRef:
+          fieldPath: spec.nodeName
+    - name: SERVICE_ACCOUNT
+      valueFrom:
+        fieldRef:
+          fieldPath: spec.serviceAccountName
+    - name: CONTAINER_CPU_REQUEST_MILLICORES
+      valueFrom:
+        #容器请求的CPU和内存使用量是引用 resourceFieldRef 字段而不是 fieldRef
+        resourceFieldRef:
+          resource: requests.cpu
+          divisor: 1m
+    #对于资源相关的字段,我们定义一个基数单位,从而生成每一部分的值
+    - name: CONTAINER_MEMORY_LIMIT_KIBIBYTES
+      valueFrom:
+        resourceFieldRef:
+          resource: limits.memory
+          divisor: 1Ki
+```
+
+#### 8.1.3 通过 downwardAPI 卷来传递元数据
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  #通过 downwardAPI 卷来暴露这些标签和注解
+  name: downward
+  labels:
+    foo: bar
+  annotations:
+    key1: value1
+    key2: |
+      multi
+      line
+      value
+spec:
+  containers:
+  - name: main
+    image: busybox
+    command: ["sleep", "9999999"]
+    resources:
+      requests:
+        cpu: 15m
+        memory: 100Ki
+      limits:
+        cpu: 100m
+        memory: 4Mi
+    #在 /etc/downward 下挂在 downward volume
+    volumeMounts:
+    - name: downward
+      mountPath: /etc/downward
+  volumes:
+  #通过将卷名设定为 downward 来定义一个 downwardAPI 卷
+  - name: downward
+    downwardAPI:
+      #将 manifest 文件中的 metadata.name 字段写入 podName
+      items:
+      - path: "podName"
+        fieldRef:
+          fieldPath: metadata.name
+      - path: "podNamespace"
+        fieldRef:
+          fieldPath: metadata.namespace
+      #pod 的标签将被保存到 /etc/downward/labels 文件中,因为 volume 被挂在在 /etc/downward 下
+      - path: "labels"
+        fieldRef:
+          fieldPath: metadata.labels
+      - path: "annotations"
+        fieldRef:
+          fieldPath: metadata.annotations
+      - path: "containerCpuRequestMilliCores"
+        resourceFieldRef:
+          containerName: main
+          resource: requests.cpu
+          divisor: 1m
+      - path: "containerMemoryLimitBytes"
+        resourceFieldRef:
+          #必须指定容器名
+          containerName: main
+          resource: limits.memory
+          divisor: 1
+```
+
+```bash
+k exec -it downward -- ls /etc/downward
+#annotations                    labels
+#containerCpuRequestMilliCores  podName
+#containerMemoryLimitBytes      podNamespace
+
+k exec -it downward -c main -- cat /etc/downward/annotations
+#key1="value1"
+#key2="multi\nline\nvalue\n"
+#kubectl.kubernetes.io/default-container="main"
+#...
+```
+
+##### 修改 labels 和 annotations
+
+> 可以在pod运行时修改标签和注解,当标签和注解被修改之后kubernetes会更新存有相关信息的文件.但是通过环境变量运行时是不会修改的.
+>
+> 而我们通过 downwardAPI 卷则是通过 `fieldRef` 引用的是可以生效的
+
+##### 在卷的定义中引用容器级的元数据
+
+> 引用 `容器级` 的元数据,是因为我们对于卷的定义是 pod 级的而不是容器级的.
+
+```yaml
+spec:
+  volumes:
+  - name: downward
+    downwardAPI:
+      items:
+      - path: "containerCpuRequestMilliCores"
+        resourceFieldRef:
+          #必须指定容器名
+          containerName: main
+          resource: requests.cpu
+          divisor: 1m
+```
+
+### 8.2 与 kubernetes API 服务器交互
+
+> 通过 downwardAPI 只能暴露一个 pod 自身的元数据,也只能暴露一部分元数据.
+>
+> 如果我们需要获取所有的 pod 的元数据,就需要直接与API服务器进行交互.
+
+![与API服务器交互](与API服务器交互.png)
+
+#### 8.2.1 探索 kubernetes REST API
+
+```bash
+# 获取服务集群信息
+k cluster-info
+#Kubernetes master is running at https://192.168.99.100:8443
+#KubeDNS is running at https://192.168.99.100:8443/api/v1/namespaces/kube-system/services/kube-dns:dns/proxy
+#
+#To further debug and diagnose cluster problems, use 'kubectl cluster-info dump'.
+```
+
+##### 通过 kubectl proxy 访问 API 服务器
+
+> kubectl proxy 启动一个代理服务器做代理.
+
+```bash
+k proxy
+#Starting to serve on 127.0.0.1:8001
+```
+
+##### 通过 kubectl proxy 研究 kubernetes API
+
+- `/api/v1` 对应 apiVersion
+
+##### 研究批量API组的 REST endpoint
+
+```bash
+curl http://localhost:8001/apis/batch
+```
+
+```json
+{
+  "kind": "APIGroup",
+  "apiVersion": "v1",
+  "name": "batch",
+  "versions": [
+    {
+      "groupVersion": "batch/v1",
+      "version": "v1"
+    },
+    {
+      "groupVersion": "batch/v1beta1",
+      "version": "v1beta1"
+    }
+  ],
+  "preferredVersion": {
+    "groupVersion": "batch/v1",
+    "version": "v1"
+  }
+}
+```
+
+> - versions 是一个长度为2的数组,因为它包含了 v1 和 v1beta 两个版本
+> - preferredVersion 表示客户端应该使用 v1 版本
+
+##### /apis/batch/v1
+
+> - kind, apiVersion, groupVersion 是在 batch/v1 API 组中的API资源清单
+> - resources 包含了这个组中所有的资源类型
+> - resources[0].name 和 resources[1].name 分别表示了 job 资源以及 job 资源的状态
+> - resources[].verbs 给出了资源对应可以使用的操作.
+
+```bash
+curl http://localhost:8001/apis/batch/v1
+```
+
+```json
+{
+  "kind": "APIResourceList",
+  "apiVersion": "v1",
+  "groupVersion": "batch/v1",
+  "resources": [
+    {
+      "name": "jobs",
+      "singularName": "",
+      "namespaced": true,
+      "kind": "Job",
+      "verbs": [
+        "create",
+        "delete",
+        "deletecollection",
+        "get",
+        "list",
+        "patch",
+        "update",
+        "watch"
+      ],
+      "categories": [
+        "all"
+      ],
+      "storageVersionHash": "mudhfqk/qZY="
+    },
+    {
+      "name": "jobs/status",
+      "singularName": "",
+      "namespaced": true,
+      "kind": "Job",
+      "verbs": [
+        "get",
+        "patch",
+        "update"
+      ]
+    }
+  ]
+}
+```
+
+##### 列举集群中所有的 job 实例
+
+> 通过 kubernetes API 得到的结果和 kubectl 得到的结果是匹配的.
+
+```bash
+curl http://localhost:8001/apis/batch/v1/jobs
+
+k get jobs -A
+```
+
+##### 通过名称restore一个指定的 job 实例
+
+> job 实例
+>
+> - namespaces : ingress-nginx
+> - name : ingress-nginx-admission-create
+
+```bash
+#Jobs
+curl http://localhost:8001/apis/batch/v1/namespaces/ingress-nginx/jobs/ingress-nginx-admission-create
+```
+
+#### 8.2.2 从 pod 内部与 API 服务器交互
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: curl
+spec:
+  containers:
+  - name: main
+    image: tutum/curl
+    command: ["sleep", "9999999"]
+```
+
+```bash
+# 进入 curl
+k exec -it curl -c main -- bash
+
+# 查看 ca 证书
+ls /var/run/secrets//kubernetes.io/serviceaccount/
+
+# 通过证书访问
+curl --cacert /var/run/secrets//kubernetes.io/serviceaccount/ca.crt https://kubernetes
+
+# export 证书，这样我们可以直接 curl
+export CURL_CA_BUNDLE=var/run/secrets//kubernetes.io/serviceaccount/ca.crt
+
+TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+
+curl -H "Authorization: Bearer $TOKEN" https://kubernetes
+```
+
+##### 关闭基于角色的控制访问（RBAC)
+
+```bash
+k create clusterrolebinding permissive-binding \
+--clusterrole=cluster-admin \
+--group=system:serviceaccounts
+```
+
+##### 获取当前运行 pod 所在的命名空间
+
+```bash
+NS=$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)
+
+# 获取命名空间下的所有 pods
+curl -H "Authorization: Bearer $TOKEN" https://kubernetes/api/v1/namespaces/$NS/pods
+```
+
+#### 8.2.3 通过 ambassador 容器简化与 API 服务器的交互
+
+##### ambassador 容器模式介绍
+
+![使用 ambassador连接API服务器](使用 ambassador连接API服务器.png)
+
+##### 运行带有附加 ambassador 容器的 CURL pod
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: curl-with-ambassador
+spec:
+  containers:
+  - name: main
+    image: tutum/curl
+    command: ["sleep", "9999999"]
+  # 额外运行一个 ambassador 容器
+  - name: ambassador
+    image: luksa/kubectl-proxy:1.6.2
+```
+
+```bash
+# 
+k exec -it curl-with-ambassador -c main -- bash
+
+# 直接访问 ambassador 容器内的 kubectl proxy
+curl localhost:8001
+```
+
+#### 8.2.4 使用客户端库与API服务器交互
+
 
 
 
