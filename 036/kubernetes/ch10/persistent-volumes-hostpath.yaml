@@ -1,0 +1,43 @@
+#描述需要创建三个 pv
+kind: List
+apiVersion: v1
+items:
+- apiVersion: v1
+  #指定需要创建的是 pv
+  kind: PersistentVolume
+  metadata:
+    name: pv-a
+  spec:
+    capacity:
+      storage: 1Mi
+    accessModes:
+      - ReadWriteOnce
+    #当卷被声明释放后，空间会被回收再利用
+    #所以，我们在和 StatefulSet 合并使用的时候，ss 不会自动的清理 pvc 以避免该卷被回收
+    persistentVolumeReclaimPolicy: Recycle
+    hostPath:
+      path: /tmp/pv-a
+- apiVersion: v1
+  kind: PersistentVolume
+  metadata:
+    name: pv-b
+  spec:
+    capacity:
+      storage: 1Mi
+    accessModes:
+      - ReadWriteOnce
+    persistentVolumeReclaimPolicy: Recycle
+    hostPath:
+      path: /tmp/pv-b
+- apiVersion: v1
+  kind: PersistentVolume
+  metadata:
+    name: pv-c
+  spec:
+    capacity:
+      storage: 1Mi
+    accessModes:
+      - ReadWriteOnce
+    persistentVolumeReclaimPolicy: Recycle
+    hostPath:
+      path: /tmp/pv-c

@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+#指定使用 ss
+kind: StatefulSet
+metadata:
+  name: kubia
+spec:
+  serviceName: kubia
+  replicas: 2
+  #StatefulSet 创建的 pod 都带有 app=kubia 标签
+  selector:
+    matchLabels:
+      # has to match .spec.template.metadata.labels
+      app: kubia
+  template:
+    metadata:
+      labels:
+        app: kubia
+    spec:
+      containers:
+      - name: kubia
+        image: luksa/kubia-pet
+        ports:
+        - name: http
+          containerPort: 8080
+        volumeMounts:
+        - name: data
+          #指定 pv 被绑定到 /var/data
+          mountPath: /var/data
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      resources:
+        requests:
+          storage: 1Mi
+      accessModes:
+      - ReadWriteOnce

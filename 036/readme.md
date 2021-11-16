@@ -3697,17 +3697,425 @@ spec:
             port: 8080
 ```
 
+## 10. StatefulSet：部署有状态的多副本应用
+
+### 10.1 复制有状态 pod
+
+> rs 是在 `template` 里关联 pvc 的，又会依据 `template` 实例化多个 pod，则不能对每个副本都指定独立的 pvc。
+
+![rs绑定pv和pvc](rs绑定pv和pvc.png)
+
+#### 10.1.2 每个 pod 都提供稳定的标识
+
+> 当启动的实例拥有全新的网络标识，但是还使用旧实例的数据可能会引起问题。
+>
+> 所以我们希望 pod 拥有稳定的标识（例如重启之后IP不会变更）。
+
+### 10.2 StatefulSet
+
+> 使用 StatefulSet 代替 ReplicaSet
+
+#### 10.2.2 提供稳定的网络标识
+
+![StatefulSet主机名](StatefulSet主机名.png)
+
+##### 控制服务介绍
+
+> 对于有状态的服务来说，我们通常是希望操作的是 Set 中 **特定的一个**
+
+##### 替换消失的 pod
+
+> 通常来说，假设一个 `pod A-0` 所在的 node 发生故障，那么 `pod A-0` 会在一个全新的节点上启动，并且他的名字还是 `pod A-0`
+
+##### 扩缩容 StatefulSet
+
+> - 扩容时将使用下一个没有被使用的索引
+> - 缩容时将删除当前最大的索引
+
+> **StatefulSet 在缩容时只会操作一个 pod 实例，并且在集群有不健康节点的时候也不允许执行缩容操作。**
+
+#### 为每个有状态实例提供稳定的专属存储
+
+##### 在 pod 模板中添加卷声明模板
+
+> pvc 会在**创建pod前**创建出来并绑定到一个pod实例上。
+
+![StatefulSet创建pod和pvc](StatefulSet创建pod和pvc.png)
+
+##### 持久卷的创建和删除
+
+> - 扩容 StatefulSet 时，会创建一个 pod 和一个或多个 pvc
+> - 缩容时，会删除 pod 并保留 pvc，因为删除 pvc 会导致 pv 被删除，上面的数据会丢失。因此我们需要手动的删除 pvc。
+
+##### 重新挂载持久卷声明到相同pod的新实例上
+
+![重新挂载pvc到相同的pod实例上](重新挂载pvc到相同的pod实例上.png)
+
+#### 10.2.4 StatefulSet 的保障
+
+##### 稳定标识和独立存储的影响
+
+> - 对于 StatefulSet，kubernetes 总是保证它会被一个完全一致的 pod 替换（相同的名称，主机名和存储等）；
+
+### 10.3 使用 Stateful
+
+#### 10.3.1 创建应用和容器镜像
+
+```javascript
+const http = require('http');
+const os = require('os');
+const fs = require('fs');
+
+const dataFile = "/var/data/kubia.txt";
+
+function fileExists(file) {
+  try {
+    fs.statSync(file);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+var handler = function(request, response) {
+  // 在post请求中把body存储到一个文件
+  if (request.method == 'POST') {
+    var file = fs.createWriteStream(dataFile);
+    file.on('open', function (fd) {
+      request.pipe(file);
+      console.log("New data has been received and stored.");
+      response.writeHead(200);
+      response.end("Data stored on pod " + os.hostname() + "\n");
+    });
+  } else {
+	// 在 get 请求中返回主机名和数据文件的内容
+    var data = fileExists(dataFile) ? fs.readFileSync(dataFile, 'utf8') : "No data posted yet";
+    response.writeHead(200);
+    response.write("You've hit " + os.hostname() + "\n");
+    response.end("Data stored on this pod: " + data + "\n");
+  }
+};
+
+var www = http.createServer(handler);
+www.listen(8080);
+```
+
+#### 10.3.2 通过 StatefulSet 来部署应用
+
+##### 为什么需要 headless server
+
+> 与普通的 pod 不一样的是，有状态的 pod 有时候需要通过主机名来定位，而无状态的 pod 则不需要。对于有状态的 pod 来说，我们通常希望操作的是其中特定的一个。
+>
+> 基于以上原因，一个 StatefulSet 通常要求我们创建一个用来记录每个 pod 网络标记的 headless service。通过这个 service 每个 pod 将拥有独立的 DNS 记录。
+>
+> 比如，一个在 default 命名空间，名为 foo 的控制服务，它的一个 pod 名称为 A-0，那么可以通过 **a-0.foo.default.svc.cluster.local** 来访问，这在 rs 中是行不通的。
+
+##### 创建 pv
+
+```yaml
+#描述需要创建三个 pv
+kind: List
+apiVersion: v1
+items:
+- apiVersion: v1
+  #指定需要创建的是 pv
+  kind: PersistentVolume
+  metadata:
+    name: pv-a
+  spec:
+    capacity:
+      storage: 1Mi
+    accessModes:
+      - ReadWriteOnce
+    #当卷被声明释放后，空间会被回收再利用
+    #所以，我们在和 StatefulSet 合并使用的时候，ss 不会自动的清理 pvc 以避免该卷被回收
+    persistentVolumeReclaimPolicy: Recycle
+    hostPath:
+      path: /tmp/pv-a
+- apiVersion: v1
+  kind: PersistentVolume
+  metadata:
+    name: pv-b
+  spec:
+    capacity:
+      storage: 1Mi
+    accessModes:
+      - ReadWriteOnce
+    persistentVolumeReclaimPolicy: Recycle
+    hostPath:
+      path: /tmp/pv-b
+- apiVersion: v1
+  kind: PersistentVolume
+  metadata:
+    name: pv-c
+  spec:
+    capacity:
+      storage: 1Mi
+    accessModes:
+      - ReadWriteOnce
+    persistentVolumeReclaimPolicy: Recycle
+    hostPath:
+      path: /tmp/pv-c
+```
+
+##### 创建控制 service
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: kubia
+spec:
+  #指定 headless 模式
+  clusterIP: None
+  selector:
+    app: kubia
+  ports:
+  - name: http
+    #这里注意一个问题，我们不需要配置 targetPort: 8080，而是在访问时手动的加上 8080 端口
+    #因为这是 headless 模式，我们是直连 pod 的。
+    port: 80
+```
+
+##### 创建 StatefulSet 清单
+
+```yaml
+apiVersion: apps/v1
+#指定使用 ss
+kind: StatefulSet
+metadata:
+  name: kubia
+spec:
+  serviceName: kubia
+  replicas: 2
+  #StatefulSet 创建的 pod 都带有 app=kubia 标签
+  selector:
+    matchLabels:
+      # has to match .spec.template.metadata.labels
+      app: kubia
+  template:
+    metadata:
+      labels:
+        app: kubia
+    spec:
+      containers:
+      - name: kubia
+        image: luksa/kubia-pet
+        ports:
+        - name: http
+          containerPort: 8080
+        volumeMounts:
+        - name: data
+          #指定 pv 被绑定到 /var/data
+          mountPath: /var/data
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      resources:
+        requests:
+          storage: 1Mi
+      accessModes:
+      - ReadWriteOnce
+```
+
+##### 关联 StatefulSet
+
+> StatefulSet 会等待第一个 pod 启动并就绪之后再启动第二个 pod。
+
+#### 10.3.3 使用 pod
+
+##### 通过API服务器与pod通信
+
+```bash
+#开启 proxy
+k proxy
+
+#发送请求到 kubia-0 pod
+curl localhost:8001/api/v1/namespaces/default/pods/kubia-0/proxy/
+
+curl -X POST -d "Hey there! This greeting was submitted to kubia-0." localhost:8001/api/v1/namespaces/default/pods/kubia-0/proxy/
+
+curl localhost:8001/api/v1/namespaces/default/pods/kubia-0/proxy/
+#You've hit kubia-0
+#Data stored on this pod: Hey there! This greeting was submitted to kubia-0.
+```
+
+![通过kubectl代理和api服务器与pod通信](通过kubectl代理和api服务器与pod通信.png)
+
+##### 扩缩容 StatefulSet
+
+> 缩容一个会首先删除最高索引的 pod，等这个 pod 被完全终止之后才会开始删除拥有次高索引的 pod。
+
+##### 通过非headless的service暴露StatefulSet的pod
+
+> 通过 API 服务器，我们可以随机的访问 StatefulSet 的 pod，后续我们会改进它。
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: kubia-public
+spec:
+  selector:
+    app: kubia
+  ports:
+  - port: 80
+    targetPort: 8080
+```
+
+```bash
+k proxy
+
+curl localhost:8001/api/v1/namespaces/default/services/kubia-public/proxy/
+#You've hit kubia-1
+#Data stored on this pod: No data posted yet
+
+curl localhost:8001/api/v1/namespaces/default/services/kubia-public/proxy/
+#You've hit kubia-0
+#Data stored on this pod: Hey there! This greeting was submitted to kubia-0.
+```
+
+### 10.4 在 StatefulSet 中发现伙伴节点
+
+##### 介绍SRV记录
+
+> SRV记录用来指向提供指定服务的服务器的主机名和端口号，kubernetes 通过一个 headless service 创建 SRV 记录来指向 pod 的主机名
+
+```bash
+#
+k run --rm -it srvlookup --image=tutum/dnsutils --restart=Never -- dig SRV kubia.default.svc.cluster.local
+```
+
+>;; ANSWER SECTION:
+>kubia.default.svc.cluster.local. 30 IN	SRV	0 50 8080 kubia-0.kubia.default.svc.cluster.local.
+>kubia.default.svc.cluster.local. 30 IN	SRV	0 50 8080 kubia-1.kubia.default.svc.cluster.local.
+>
+>
+>
+>;; ADDITIONAL SECTION:
+>kubia-1.kubia.default.svc.cluster.local. 30 IN A 10.244.3.30
+>kubia-0.kubia.default.svc.cluster.local. 30 IN A 10.244.3.29
+
+#### 10.4.1 通过DNS实现伙伴间的彼此发现
+
+```javascript
+const http = require('http');
+const os = require('os');
+const fs = require('fs');
+const dns = require('dns');
+
+const dataFile = "/var/data/kubia.txt";
+const serviceName = "kubia.default.svc.cluster.local";
+const port = 8080;
 
 
+function fileExists(file) {
+  try {
+    fs.statSync(file);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
 
+// 对于 get 请求返回
+function httpGet(reqOptions, callback) {
+  return http.get(reqOptions, function(response) {
+    var body = '';
+    response.on('data', function(d) { body += d; });
+    response.on('end', function() { callback(body); });
+  }).on('error', function(e) {
+    callback("Error: " + e.message);
+  });
+}
 
+var handler = function(request, response) {
+  // 如果是 POST 请求那么将数据写入文件
+  if (request.method == 'POST') {
+    var file = fs.createWriteStream(dataFile);
+    file.on('open', function (fd) {
+      request.pipe(file);
+      response.writeHead(200);
+      response.end("Data stored on pod " + os.hostname() + "\n");
+    });
+  } else {
+    response.writeHead(200);
+	// 如果 url 以 /data 结尾则返回存储的数据
+    if (request.url == '/data') {
+      var data = fileExists(dataFile) ? fs.readFileSync(dataFile, 'utf8') : "No data posted yet";
+      response.end(data);
+    } else {
+      response.write("You've hit " + os.hostname() + "\n");
+      response.write("Data stored in the cluster:\n");
+	  // 与SRV记录对应的每个pod通信获取其数据
+      dns.resolveSrv(serviceName, function (err, addresses) {
+        if (err) {
+          response.end("Could not look up DNS SRV records: " + err);
+          return;
+        }
+        var numResponses = 0;
+        if (addresses.length == 0) {
+          response.end("No peers discovered.");
+        } else {
+          addresses.forEach(function (item) {
+            var requestOptions = {
+              host: item.name,
+              port: port,
+              path: '/data'
+            };
+            httpGet(requestOptions, function (returnedData) {
+              numResponses++;
+              response.write("- " + item.name + ": " + returnedData + "\n");
+              if (numResponses == addresses.length) {
+                response.end();
+              }
+            });
+          });
+        }
+      });
+    }
+  }
+};
 
+var www = http.createServer(handler);
+www.listen(port);
+```
 
+![简单的分布式数据存储服务的操作流程](简单的分布式数据存储服务的操作流程.png)
 
+#### 10.4.2 更新 StatefulSet
 
+#### 10.4.3 尝试集群数据存储
 
+```bash
+#多次执行写入数据
+curl -X POST -d "The sun is shining" localhost:8001/api/v1/namespaces/default/services/kubia-public/proxy/
+curl -X POST -d "The sun is shining" localhost:8001/api/v1/namespaces/default/services/kubia-public/proxy/
+curl -X POST -d "The sun is shining" localhost:8001/api/v1/namespaces/default/services/kubia-public/proxy/
+#...
 
+#分布式查询
+curl localhost:8001/api/v1/namespaces/default/services/kubia-public/proxy/
+#You've hit kubia-0
+#Data stored in the cluster:
+#- kubia-0.kubia.default.svc.cluster.local: The sun is shining
+#- kubia-1.kubia.default.svc.cluster.local: The sun is shining
+#- kubia-2.kubia.default.svc.cluster.local: No data posted yet
+```
 
+### 10.5 了解 StatefulSet 如何处理故障节点
+
+> StatefulSet 在节点故障的时候，由于节点无法通信，所以节点状态会变成 `unknown` ，在持续一段时间之后，master节点上的K8S控制平面就会自动将Pod从故障节点上驱逐，但是因为故障节点上的Kubelet连不上master节点了，Pod的状态就一直保持在`Terminating`，Pod还会继续运行。
+>
+> 这时候即使你主动执行`kubectl delete po`删除Pod，也并不会起作用，Pod的状态还是`Terminating`，因为API server收不到Kubelet真实删除Pod的反馈。所以只能执行强制删除Pod的命令：
+
+```bash
+# --grace-period=0，Pod会在其进程完成后正常终止，K8S默认正常终止时间段为30s，删除Pod时可以替换此宽限期，将--grace-period标志设置为强制终止Pod之前等待Pod终止的秒数
+kubectl delete po kubia-0 --force --grace-period=0
+# 如果执行了上面的命令后Pod还是卡在Unknown的状态，用下面的命令将Pod从集群中移除
+kubectl patch pod <pod> -p '{"metadata":{"finalizers":null}}'
+```
 
 
 
