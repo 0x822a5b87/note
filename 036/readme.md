@@ -4163,5 +4163,3 @@ kubectl patch pod <pod> -p '{"metadata":{"finalizers":null}}'
 
 
 
-
-
