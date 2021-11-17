@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubia-node-port
+spec:
+  replicas: 1
+  template:
+    metadata:
+      name: kubia-node-port
+      labels:
+        app: kubia-node-port
+    spec:
+      containers:
+      - image: luksa/kubia:v1
+        name: nodejs
+        ports:
+        - containerPort: 8080
+          #这里不用配置 hostPort
+  selector:
+    matchLabels:
+      app: kubia-node-port

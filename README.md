@@ -37,3 +37,4 @@
 35. `[TODO] Raft`
 36. k8s
 37. istio
+38. [从外部访问Kubernetes中的Pod](https://jimmysong.io/blog/accessing-kubernetes-pods-from-outside-of-the-cluster/)

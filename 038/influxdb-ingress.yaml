@@ -1,0 +1,34 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: influxdb
+spec:
+  rules:
+    - host: influxdb.kube.example.com
+      http:
+        paths:
+        - backend:
+            service:
+              name: influxdb
+              port:
+                number: 8086
+          path: /
+          pathType: Prefix
+
+
+                #apiVersion: networking.k8s.io/v1
+                #kind: Ingress
+                #metadata:
+                #  name: kubia-ingress
+                #spec:
+                #  rules:
+                #  - host: "kube.example.com"
+                #    http:
+                #      paths:
+                #      - path: /
+                #        pathType: Prefix
+                #        backend:
+                #          service:
+                #            name: kubia-node-port-service
+                #            port:
+                #              number: 8080
