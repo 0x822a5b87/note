@@ -2,6 +2,33 @@
 
 > 1. 在后续的注释中，`<plural>` 表示 yaml 文件中 `plural` 声明的值。例如 `<plural>.<group>` 代表 string.concat(plural, '.', group)
 
+## yaml
+
+```yaml
+apiVersion: apiextensions.k8s.io/v1beta1
+kind: CustomResourceDefinition
+metadata:
+  # name must match the spec fields below, and be in the form: <plural>.<group>
+  name: tasks.163yun.com
+spec:
+  # group name to use for REST API: /apis/<group>/<version>
+  group: 163yun.com
+  # version name to use for REST API: /apis/<group>/<version>
+  version: v1
+  # either Namespaced or Cluster
+  scope: Namespaced
+  names:
+    # plural name to be used in the URL: /apis/<group>/<version>/<plural>
+    plural: tasks
+    # singular name to be used as an alias on the CLI and for display
+    singular: task
+    # kind is normally the CamelCased singular type. Your resource manifests use this.
+    kind: Task
+    # shortNames allow shorter string to match your resource on the CLI
+    shortNames:
+    - task
+```
+
 ## Create a CustomResourceDefinition
 
 ```yaml
@@ -754,6 +781,16 @@ kubectl get all
 #NAME                          AGE
 #crontabs/my-new-cron-object   3s
 ```
+
+
+
+
+
+
+
+
+
+
 
 
 
