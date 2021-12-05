@@ -40,3 +40,4 @@
 38. [从外部访问Kubernetes中的Pod](https://jimmysong.io/blog/accessing-kubernetes-pods-from-outside-of-the-cluster/)
 39. [Extend the Kubernetes API with CustomResourceDefinitions](https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/)
 40. kubernetes CRD
+41. kubernetes 其他相关
