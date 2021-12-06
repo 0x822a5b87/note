@@ -10,6 +10,35 @@
 - [Go Operator Tutorial](https://sdk.operatorframework.io/docs/building-operators/golang/tutorial/)
 - [kubernetes/sample-controller](https://github.com/kubernetes/sample-controller)
 
+## tips
+
+### 一些名词的的理解
+
+> #### domain
+>
+> #### apiGroup
+>
+> 使用 `kubectl api-resources` 可以看到，有这些字段 `NAME	SHORTNAMES	APIGROUP	NAMESPACED	KIND`，有这两个我们比较熟悉的：
+>
+> - `NAME=pods,APIGROUP=''`
+> - `NAME=deployments,APIGROUP=apps`
+>
+> 而在我们的 `yaml`文件中，则他们的 `apiVersion` 分别为
+>
+> 	- apiVersion: v1
+> 	- apiVersion: apps/v1
+>
+> #### version
+
+### operator api and controller
+
+> operator 分为两个部分，分别是 api 和 controller，在使用 kubebuilder 或者 operator-sdk 创建 api 的时候一般会生成两个文件：
+>
+> - api/v1/xxx_types.go
+> - controller/xxx_controller.go
+>
+> api 表明了 operator 的定义，元数据等；而 controller 决定了CRD的 `reconcile` 行为。
+
 ## CRD【CustomResourceDefinition】
 
 > Operator=CRD+Controller
@@ -771,7 +800,349 @@ func (r *CronJobReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 > **7: Requeue when we either see a running job or it's time for the next scheduled run**
 
+## Go Operator Tutorial
 
+### Create a new project
+
+```bash
+operator-sdk init --domain example.com --repo github.com/example/memcached-operator
+
+operator-sdk create api --group cache --version v1alpha1 --kind Memcached --resource --controller
+```
+
+### Define the API
+
+> To begin, we will represent our API by defining the `Memcached` type, which will have a `MemcachedSpec.Size` field to set the quantity of memcached instances (CRs) to be deployed, and a `MemcachedStatus.Nodes` field to store a CR’s Pod names.
+>
+> **Note** The Node field is just to illustrate an example of a Status field. In real cases, it would be recommended to use [Conditions](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties).
+>
+> ```go
+> 	isJobFinished := func(job *kbatch.Job) (bool, kbatch.JobConditionType) {
+> 		for _, c := range job.Status.Conditions {
+> 			if (c.Type == kbatch.JobComplete || c.Type == kbatch.JobFailed) && c.Status == corev1.ConditionTrue {
+> 				return true, c.Type
+> 			}
+> 		}
+> 
+> 		return false, ""
+> 	}
+> ```
+>
+> Define the API for the Memcached Custom Resource(CR) by modifying the Go type definitions at `api/v1alpha1/memcached_types.go` to have the following spec and status:
+
+```go
+// MemcachedSpec defines the desired state of Memcached
+type MemcachedSpec struct {
+	//+kubebuilder:validation:Minimum=0
+	// Size is the size of the memcached deployment
+	Size int32 `json:"size"`
+}
+
+// MemcachedStatus defines the observed state of Memcached
+type MemcachedStatus struct {
+	// Nodes are the names of the memcached pods
+	Nodes []string `json:"nodes"`
+}
+```
+
+### Implement the Controller
+
+#### Resources watched by the Controller
+
+> The `SetupWithManager()` function in `controllers/memcached_controller.go` specifies how the controller is built to watch a CR and other resources that are owned and managed by that controller.
+
+```go
+// SetupWithManager sets up the controller with the Manager.
+func (r *MemcachedReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&cachev1alpha1.Memcached{}).
+		Complete(r)
+}
+```
+
+>`Owns(&appsv1.Deployment{})` specifies the Deployments type as the `secondary` resource to watch. For each Deployment type Add/Update/Delete event, the event handler will map each event to a reconcile `Request` for the owner of the Deployment. Which in this case is the Memcached object for which the Deployment was created.
+
+```go
+// SetupWithManager sets up the controller with the Manager.
+func (r *MemcachedReconciler) SetupWithManager(mgr ctrl.Manager) error {
+   return ctrl.NewControllerManagedBy(mgr).
+      For(&cachev1alpha1.Memcached{}).
+      Owns(&appsv1.Deployment{}).
+      Complete(r)
+}
+```
+
+#### Reconcile loop
+
+> The reconcile function is responsible for enforcing the desired CR state on the actual state of the system. It runs each time an event occurs on a watched CR or resource, and will return some value depending on whether those states match or not.
+
+```Go
+import (
+	ctrl "sigs.k8s.io/controller-runtime"
+
+	cachev1alpha1 "github.com/example/memcached-operator/api/v1alpha1"
+	...
+)
+
+func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+  // Lookup the Memcached instance for this reconcile request
+  memcached := &cachev1alpha1.Memcached{}
+  err := r.Get(ctx, req.NamespacedName, memcached)
+  ...
+}
+```
+
+The following are a few possible return options for a Reconciler:
+
+ ```go
+ // With the error:
+ return ctrl.Result{}, err
+ 
+ // Without an error:
+ return ctrl.Result{Requeue: true}, nil
+ 
+ // Therefore, to stop the Reconcile, use:
+ return ctrl.Result{}, nil
+ 
+ // Reconcile again after X time:
+  return ctrl.Result{RequeueAfter: nextRun.Sub(r.Now())}, nil
+ ```
+
+## Writing Your First Kubernetes Operator
+
+```bash
+operator-sdk init --domain app.example.com --repo tutorial.operatorsdk.io/podset
+
+operator-sdk create api --group batch --version v1 --kind PodSet --resource --controller
+```
+
+> 可以看到在 `config/samples/batch_v1_podset.yaml` 中生成了如下的 yaml。
+>
+> 其中 `apiVersion` 由 `api-resources 的 APIGROUP` + `domain` + "/" + `version` 得到
+
+```yaml
+apiVersion: batch.app.example.com/v1
+kind: PodSet
+metadata:
+  name: podset-sample
+spec:
+  # Add fields here
+```
+
+### Podset_types.go
+
+```go
+// PodSetSpec defines the desired state of PodSet
+type PodSetSpec struct {
+	// 副本数量
+	Replicas int32 `json:"replicas"`
+}
+
+// PodSetStatus defines the observed state of PodSet
+type PodSetStatus struct {
+	PodNames []string `json:"podNames"`
+}
+```
+
+### resoureces
+
+> Then, we need to configure the primary and secondary resources that the controller will monitor in the namespace. For our PodSet operator, the primary resource is the PodSet resource and the secondary resources are the pods in the namespace.
+
+### Reconcile
+
+> 1. The reconcile function is invoked each time the PodSet resource is changed or a change happens in the pods belonging to the PodSet.
+> 2. If pods need to be added or removed, the `Reconcile` function should only add or remove one pod at a time, return, and wait for the next invocation (since it will be called after a pod was created or deleted).
+> 3. Make sure that the pods are “owned” by the PodSet primary resource using the `controllerutil.SetControllerReference()` function. Having this ownership in place means that when the PodSet resource is deleted, all its “child” pods are deleted as well.
+
+### run
+
+```bash
+make manifests
+
+make install
+```
+
+### check
+
+```bash
+k api-resources --api-group=batch.app.example.com
+#NAME      SHORTNAMES   APIGROUP                NAMESPACED   KIND
+#podsets                batch.app.example.com   true         PodSet
+```
+
+### podset_controller.go
+
+```go
+/*
+Copyright 2021.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package controllers
+
+import (
+	"context"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
+	"reflect"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"time"
+	batchv1 "tutorial.operatorsdk.io/podset/api/v1"
+)
+
+var log = logf.Log.WithName("controller_podset")
+
+// PodSetReconciler reconciles a PodSet object
+type PodSetReconciler struct {
+	client.Client
+	Scheme *runtime.Scheme
+}
+
+//+kubebuilder:rbac:groups=batch.app.example.com,resources=podsets,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=batch.app.example.com,resources=podsets/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=batch.app.example.com,resources=podsets/finalizers,verbs=update
+
+// Reconcile reads that state of the cluster for a PodSet object and makes changes based on the state read
+// and what is in the PodSet.Spec
+// a Pod as an example
+// Note:
+// The Controller will requeue the Request to be processed again if the returned error is non-nil or
+// Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
+
+func (r *PodSetReconciler) Reconcile(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {
+	reqLogger := log.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
+	reqLogger.Info("Reconciling PodSet")
+
+	// 获取当前 PodSet
+	podSet := batchv1.PodSet{}
+	err := r.Get(ctx, request.NamespacedName, &podSet)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return reconcile.Result{}, nil
+		}
+		return reconcile.Result{}, err
+	}
+
+	// 获取当前 Pod 状态，并和实预期的状态做对比
+	existingPods := &corev1.PodList{}
+	podLabels := labels.Set{
+		"app":     podSet.Name,
+		"version": "v1.0",
+	}
+	err = r.List(ctx, existingPods, &client.ListOptions{
+		LabelSelector: labels.SelectorFromSet(podLabels),
+		Namespace:     podSet.Namespace,
+	})
+	if err != nil {
+		reqLogger.Error(err, "error get pods : ",
+			"request.Namespace", request.Namespace, "matchingFields", podLabels)
+
+		return reconcile.Result{}, err
+	}
+	var existingPodNames []string
+	for _, pod := range existingPods.Items {
+		if pod.GetObjectMeta().GetDeletionTimestamp() != nil {
+			continue
+		}
+		if pod.Status.Phase == corev1.PodPending || pod.Status.Phase == corev1.PodRunning {
+			existingPodNames = append(existingPodNames, pod.Name)
+		}
+	}
+	status := batchv1.PodSetStatus{
+		Replicas: int32(len(existingPodNames)),
+		PodNames: existingPodNames,
+	}
+	if !reflect.DeepEqual(podSet.Status, status) {
+		podSet.Status = status
+		err := r.Client.Status().Update(context.TODO(), &podSet)
+		if err != nil {
+			reqLogger.Error(err, "failed to update the podSet")
+			return reconcile.Result{}, err
+		}
+	}
+
+	// 缩容
+	if status.Replicas > podSet.Spec.Replicas {
+		reqLogger.Info("delete a pod in the podset", "expected replicas", podSet.Spec.Replicas, "Pod.Names", existingPodNames)
+		pod := existingPods.Items[0]
+		err = r.Delete(ctx, &pod)
+		if err != nil {
+			reqLogger.Error(err, "error delete pods!")
+			return reconcile.Result{}, err
+		}
+	}
+
+	// 扩容
+	if status.Replicas < podSet.Spec.Replicas {
+		reqLogger.Info("Adding a pod in the podset", "expected replicas", podSet.Spec.Replicas, "Pod.Names", existingPodNames)
+		pod := newPodForCR(&podSet)
+		if err := controllerutil.SetControllerReference(&podSet, pod, r.Scheme); err != nil {
+			reqLogger.Error(err, "unable to set owner reference on new pod")
+			return reconcile.Result{}, err
+		}
+		err = r.Create(ctx, pod)
+		if err != nil {
+			reqLogger.Error(err, "error create pods!")
+			return reconcile.Result{}, err
+		}
+	}
+
+	return reconcile.Result{Requeue: true}, err
+}
+
+func newPodForCR(ps *batchv1.PodSet) *corev1.Pod {
+	podLabels := map[string]string{
+		"app":     ps.Name,
+		"version": "v1.0",
+	}
+
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			GenerateName:      ps.Name + "-pod",
+			Namespace:         ps.Namespace,
+			CreationTimestamp: metav1.NewTime(time.Now()),
+			Labels:            podLabels,
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name:  "busybox",
+					Image: "busybox",
+					Command: []string{
+						"sleep", "3600",
+					},
+				},
+			},
+		},
+	}
+}
+
+// SetupWithManager sets up the controller with the Manager.
+func (r *PodSetReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&batchv1.PodSet{}).
+		Owns(&corev1.Pod{}).
+		Complete(r)
+}
+```
 
 
 
