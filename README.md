@@ -41,3 +41,4 @@
 39. [Extend the Kubernetes API with CustomResourceDefinitions](https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/)
 40. kubernetes CRD
 41. kubernetes 其他相关
+41. [learning git branch](https://learngitbranching.js.org/?locale=zh_CN)
