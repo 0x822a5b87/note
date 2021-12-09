@@ -43,3 +43,4 @@
 41. kubernetes 其他相关
 42. [learning git branch](https://learngitbranching.js.org/?locale=zh_CN)
 43. 《programming kubernetes》
+44. 《window - Tumbling，Hopping，Time Sliding，Eviction Sliding》
