@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Diagram>
+  <ID>JAVA</ID>
+  <OriginalElement>org.apache.calcite.sql.parser.SqlParserPos</OriginalElement>
+  <nodes>
+    <node x="141.0" y="160.0">org.apache.calcite.sql.SqlCall</node>
+    <node x="212.0" y="0.0">java.lang.Cloneable</node>
+    <node x="217.5" y="80.0">org.apache.calcite.sql.SqlNode</node>
+    <node x="0.0" y="160.0">org.apache.calcite.sql.SqlLiteral</node>
+    <node x="264.0" y="160.0">org.apache.calcite.sql.SqlDynamicParam</node>
+    <node x="471.0" y="160.0">org.apache.calcite.sql.SqlIdentifier</node>
+  </nodes>
+  <notes />
+  <edges>
+    <edge source="org.apache.calcite.sql.SqlNode" target="java.lang.Cloneable" relationship="REALIZATION">
+      <point x="0.0" y="-15.0" />
+      <point x="0.0" y="15.0" />
+    </edge>
+    <edge source="org.apache.calcite.sql.SqlCall" target="org.apache.calcite.sql.SqlNode" relationship="GENERALIZATION">
+      <point x="0.0" y="-15.0" />
+      <point x="192.5" y="135.0" />
+      <point x="275.0" y="135.0" />
+      <point x="0.0" y="15.0" />
+    </edge>
+    <edge source="org.apache.calcite.sql.SqlIdentifier" target="org.apache.calcite.sql.SqlNode" relationship="GENERALIZATION">
+      <point x="0.0" y="-15.0" />
+      <point x="541.0" y="135.0" />
+      <point x="275.0" y="135.0" />
+      <point x="0.0" y="15.0" />
+    </edge>
+    <edge source="org.apache.calcite.sql.SqlLiteral" target="org.apache.calcite.sql.SqlNode" relationship="GENERALIZATION">
+      <point x="0.0" y="-15.0" />
+      <point x="60.5" y="135.0" />
+      <point x="275.0" y="135.0" />
+      <point x="0.0" y="15.0" />
+    </edge>
+    <edge source="org.apache.calcite.sql.SqlDynamicParam" target="org.apache.calcite.sql.SqlNode" relationship="GENERALIZATION">
+      <point x="0.0" y="-15.0" />
+      <point x="357.5" y="135.0" />
+      <point x="275.0" y="135.0" />
+      <point x="0.0" y="15.0" />
+    </edge>
+  </edges>
+  <settings layout="Hierarchic" zoom="1.0" showDependencies="false" x="305.5" y="95.0" />
+  <SelectedNodes />
+  <Categories />
+  <SCOPE>All</SCOPE>
+  <VISIBILITY>private</VISIBILITY>
+</Diagram>
+
