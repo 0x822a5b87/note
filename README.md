@@ -1,4 +1,6 @@
-# 目录
+# 笔记
+
+## 博客
 
 1. [001 - 告别动态规划，连刷 40 道题，我总结了这些套路，看不懂你打我](https://zhuanlan.zhihu.com/p/91582909)
 2. [002 - Dynamic Programming](https://en.wikipedia.org/wiki/Dynamic_programming)
@@ -44,3 +46,9 @@
 42. [learning git branch](https://learngitbranching.js.org/?locale=zh_CN)
 43. 《programming kubernetes》
 44. 《window - Tumbling，Hopping，Time Sliding，Eviction Sliding》
+
+## 框架
+
+## 实时计算
+
+- flink
