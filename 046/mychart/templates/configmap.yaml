@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-configmap
+data:
+  myvalue: "Hello World"
+  # 对字符串增加引号
+  drink: {{ quote .Values.favorite.drink }}
+  food: {{ quote .Values.favorite.food }}
+  foodWithoutQuote: {{ .Values.favorite.food }}
+  salad: {{ .Values.mysubchart.global.salad }}
+  dessert: {{ .Values.mysubchart.dessert }}

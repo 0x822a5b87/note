@@ -1,0 +1,30 @@
+NAME: goodly-guppy
+LAST DEPLOYED: Wed Dec 15 14:59:54 2021
+NAMESPACE: default
+STATUS: pending-install
+REVISION: 1
+TEST SUITE: None
+USER-SUPPLIED VALUES:
+{}
+
+COMPUTED VALUES:
+favorite:
+  drink: coffee
+  food: cake
+favoriteDrink: coffee
+
+HOOKS:
+MANIFEST:
+---
+# Source: mychart/templates/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: goodly-guppy-configmap
+data:
+  myvalue: "Hello World"
+  # 对字符串增加引号
+  drink: "coffee"
+  food: "cake"
+  foodWithoutQuote: cake
+
