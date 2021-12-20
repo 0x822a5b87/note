@@ -1,0 +1,69 @@
+version: "3.7"
+services:
+
+  # Envoy( front )
+  proxy-frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile-proxy
+    networks:
+      edge:
+    ports:
+      - "10000:10000"
+
+  # Flash
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile-app
+    networks:
+      edge:
+      postgres-frontend:
+
+  # Envoy( postgres-front )
+  proxy-postgres-frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile-proxy-frontend
+    networks:
+      postgres-frontend:
+        #aliases:
+        #  - postgres
+      postgres-in-between:
+
+  # Envoy( postgres-back )
+  proxy-postgres-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile-proxy-backend
+    networks:
+      postgres-backend:
+      postgres-in-between:
+        aliases:
+        - proxy-postgres-backend.example.com
+
+  # PostgreSQL
+  postgres:
+    image: postgres:latest
+    networks:
+      postgres-backend:
+    environment:
+      # WARNING! Do not use it on production environments because this will
+      #          allow anyone with access to the Postgres port to access your
+      #          database without a password, even if POSTGRES_PASSWORD is set.
+      #          See PostgreSQL documentation about "trust":
+      #          https://www.postgresql.org/docs/current/auth-trust.html
+      POSTGRES_HOST_AUTH_METHOD: trust
+
+networks:
+  edge:
+    name: edge
+
+  postgres-backend:
+    name: postgres-backend
+
+  postgres-frontend:
+    name: postgres-frontend
+
+  postgres-in-between:
+    name: postgres-in-between

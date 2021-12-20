@@ -895,21 +895,139 @@ static_resources:
                 port_value: 5432
 ```
 
+## [envoy-tutorial](https://github.com/rootsongjc/envoy-tutorial)
 
+> envoy-tutorial 是在 envoy-steps 基础上的开发，因为 envoy-steps 仅仅是一个脚手架。 
 
+![envoy-mesh-in-kubernetes](envoy-mesh-in-kubernetes.png)
 
+### 部署应用
 
+```bash
+# 部署 pg 库
+kubectl apply -f postgres
 
+# 创建 usersvc 镜像
+cd usersvc
+docker build -t jimmysong/usersvc:step1 .
 
+# 创建 usersvc
+```
 
+### 创建 namespace
 
+```bash
+kubectl apply -f postgres
 
+kubectl apply -f usersvc
 
+# 登录 usersvc 所在的 pod
+curl localhost:5000/user/health
+```
 
+### postgres
 
+#### deployment
 
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: null
+  name: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      service: postgres
+  strategy: {}
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        service: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:9.6.24-stretch
+        env:
+        - name: POSTGRES_PASSWORD
+          value : "trust"
+        resources: {}
+      restartPolicy: Always
+status: {}
+```
 
+#### service
 
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  creationTimestamp: null
+  labels:
+    service: postgres
+  name: postgres
+spec:
+  type: ClusterIP
+  ports:
+  - name: postgres
+    port: 5432
+  selector:
+    service: postgres
+```
+
+### usersvc
+
+#### deployment
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: null
+  name: usersvc
+  namespace: envoy-tutorial
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      service: usersvc
+  strategy: {}
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        service: usersvc
+    spec:
+      containers:
+      - name: usersvc
+        image: jimmysong/usersvc:step1
+        resources: {}
+      restartPolicy: Always
+status: {}
+```
+
+#### service
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  creationTimestamp: null
+  labels:
+    service: usersvc
+  name: usersvc
+  namespace: envoy-tutorial
+spec:
+  type: ClusterIP
+  ports:
+  - name: usersvc
+    port: 80
+    targetPort: 5000
+  selector:
+    service: usersvcpostgres-84b55d4df8-r7hg4
+```
 
 
 
