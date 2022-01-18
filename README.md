@@ -54,7 +54,8 @@
 50. [通过 docker-compose 设定 network](https://titangene.github.io/article/networking-in-docker-compose.html)
 51. bazel
 52. prometheus 集群化方案
-52. flink metrics prometheus
+53. flink metrics prometheus
+54. [json schema usage](https://json-schema.org/)
 
 ## 框架
 
