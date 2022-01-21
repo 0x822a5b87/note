@@ -2,6 +2,7 @@
 
 ## references
 
+- [test json schema](https://github.com/0x822a5b87/test-json-schema)
 - [JSON Schema](https://json-schema.org/)
 - [JSON Schema Validator](https://github.com/everit-org/json-schema)
 - [**JSON Schema: A Media Type for Describing JSON Documents**](https://json-schema.org/draft/2020-12/json-schema-core.html)
@@ -10,6 +11,7 @@
 - [Understanding JSON Schema](https://json-schema.org/understanding-json-schema/)
 - [JSON Schema Reference](https://json-schema.org/understanding-json-schema/reference/index.html)
 - [Structuring a complex schema](https://json-schema.org/understanding-json-schema/structuring.html)
+- [Liquid Studio: How to write a JSON schema $ref to another file](https://stackoverflow.com/questions/42999230/liquid-studio-how-to-write-a-json-schema-ref-to-another-file)
 
 ## Glossary
 
@@ -1659,6 +1661,84 @@ An entry in an fstab file can have many different forms; Here is an example:
 ##### Schema Identification
 
 > Like any other code, schemas are easier to maintain if they can be broken down into logical units that reference each other as necessary. In order to reference a schema, we need a way to identify a schema. Schema documents are identified by non-relative URIs.
+
+## [liquid-studio-how-to-write-a-json-schema-ref-to-another-file](https://stackoverflow.com/questions/42999230/liquid-studio-how-to-write-a-json-schema-ref-to-another-file)
+
+### main.json
+
+```json
+{
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+        "ReferenceToLocalSchema": {
+            "$ref": "#/definitions/LocalType"
+        },
+        "ReferenceToExternalSchema": {
+            "$ref": "Common.json#/definitions/ExternalType"
+        }
+    },
+    "definitions": {
+        "LocalType": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "no-write": {
+                    "type": "boolean",
+                    "default": false
+                }
+            }
+        }
+    }
+}
+```
+
+### Common.json
+
+```json
+{
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "type": "object",
+    "additionalProperties": false,
+    "definitions": {
+        "ExternalType": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "src": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "minLength": 1
+                    }
+                }
+            },
+            "required": [
+                "src"
+            ]
+        }
+    }
+}
+```
+
+> Notice the reference to the local schema
+
+```json
+"$ref": "#/definitions/LocalType"
+```
+
+> and the remote schema
+
+```json
+"$ref": "Common.json#/definitions/ExternalType"
+```
+
+> I've shown this with a relative url, but it could be a fully qualified url
+
+```json
+"$ref": "file:///Common.json#/definitions/ExternalType"
+```
 
 
 
