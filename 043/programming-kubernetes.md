@@ -581,24 +581,30 @@ type Interface interface {
 
 ```go
 func CreateInformer() {
+	fmt.Println("create informer")
 	informerFactory := informers.NewSharedInformerFactory(clientSet, time.Second*30)
 	podInformer := informerFactory.Core().V1().Pods()
 	podInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    func(obj interface{}){
+		AddFunc: func(obj interface{}) {
 			pod := obj.(*v1.Pod)
 			log.Println("add pod : ", pod.Name)
 		},
-		UpdateFunc: func(oldObj, newObj interface{}){
+		UpdateFunc: func(oldObj, newObj interface{}) {
 			pod := newObj.(*v1.Pod)
 			log.Println("update pod : ", pod.Name)
 		},
-		DeleteFunc: func(obj interface{}){
+		DeleteFunc: func(obj interface{}) {
 			pod := obj.(*v1.Pod)
 			log.Println("delete pod : ", pod.Name)
 		},
 	})
+
+	// 注册处理程序后，必须启动共享的通知者工厂。 底层有Go协程，可以对API服务器进行实际调用。
+	// Start方法（具有控制生命周期的 stop channel）启动这些Go协程，而 WaitForCacheSync() 方法使代码等待对客户端的第一个 List调用完成。
+	// 如果控制器逻辑要求缓存填充，则 WaitForCacheSync 调用必不可少。
 	informerFactory.Start(wait.NeverStop)
 	informerFactory.WaitForCacheSync(wait.NeverStop)
+
 	pods, err := podInformer.Lister().Pods("default").List(labels.NewSelector())
 	if err != nil {
 		return
@@ -609,6 +615,184 @@ func CreateInformer() {
 }
 ```
 
+> 可以通过 `NewSharedInformerFactoryWithOptions` 来进行过滤
+
+```go
+func CreateInformer() {
+	fmt.Println("create informer")
+	withNamespace := informers.WithNamespace("default")
+	informerFactory := informers.NewSharedInformerFactoryWithOptions(clientSet, time.Second*30, withNamespace)
+
+    // ...
+}
+```
+
+### 工作队列
+
+> 在  [k8s.io/client-go/util/workqueue](http://bit.ly/2IV0JPz) 中提供了一个优先级队列以及其他的扩展队列
+
+### API Machinery 进阶
+
+> `API Machinery` 代码库实现了 `Kubernetes` 基础类型系统。
+
+#### Kinds
+
+> 在 [API Terminology](https://learning.oreilly.com/library/view/programming-kubernetes/9781492047094/ch02.html#terminology) 中已经看到的，kinds 被分为 API 组和版本。 因此，`API Machinery` 代码库中的核心术语是 GroupVersionKind，简称 GVK。
+
+#### Resources
+
+> 在 [API Terminology](https://learning.oreilly.com/library/view/programming-kubernetes/9781492047094/ch02.html#terminology) 中看到的与kinds 同级的是概念是 resource。Resources 再次进行分组和版本控制，因此有术语 GroupVersionResource 或简称为 GVR。
+
+#### REST Mapping
+
+> 一个 GVK 到一个 GVR 的映射被称为 REST mapping。
+
+```go
+// RESTMapping contains the information needed to deal with objects of a specific
+// resource and kind in a RESTful manner.
+type RESTMapping struct {
+	// Resource is the GroupVersionResource (location) for this endpoint
+	Resource schema.GroupVersionResource
+
+	// GroupVersionKind is the GroupVersionKind (data format) to submit to this endpoint
+	GroupVersionKind schema.GroupVersionKind
+
+	// Scope contains the information needed to deal with REST Resources that are in a resource hierarchy
+	Scope RESTScope
+}
+```
+
+#### Scheme
+
+> `scheme` 将 Golang 的世界与 GVK 连接在一起。 `scheme` 的主要特征是将 Golang 类型映射到可能的 GVK ：
+
+```go
+// Scheme defines methods for serializing and deserializing API objects, a type
+// registry for converting group, version, and kind information to and from Go
+// schemas, and mappings between Go schemas of different versions. A scheme is the
+// foundation for a versioned API and versioned configuration over time.
+//
+// In a Scheme, a Type is a particular Go struct, a Version is a point-in-time
+// identifier for a particular representation of that Type (typically backwards
+// compatible), a Kind is the unique name for that Type within the Version, and a
+// Group identifies a set of Versions, Kinds, and Types that evolve over time. An
+// Unversioned Type is one that is not yet formally bound to a type and is promised
+// to be backwards compatible (effectively a "v1" of a Type that does not expect
+// to break in the future).
+//
+// Schemes are not expected to change at runtime and are only threadsafe after
+// registration is complete.
+type Scheme struct {
+	// gvkToType allows one to figure out the go type of an object with
+	// the given version and name.
+	gvkToType map[schema.GroupVersionKind]reflect.Type
+
+	// typeToGVK allows one to find metadata for a given go object.
+	// The reflect.Type we index by should *not* be a pointer.
+	typeToGVK map[reflect.Type][]schema.GroupVersionKind
+
+	// unversionedTypes are transformed without conversion in ConvertToVersion.
+	unversionedTypes map[reflect.Type]schema.GroupVersionKind
+
+	// unversionedKinds are the names of kinds that can be created in the context of any group
+	// or version
+	// TODO: resolve the status of unversioned types.
+	unversionedKinds map[string]reflect.Type
+
+	// Map from version and resource to the corresponding func to convert
+	// resource field labels in that version to internal version.
+	fieldLabelConversionFuncs map[schema.GroupVersionKind]FieldLabelConversionFunc
+
+	// defaulterFuncs is a map to funcs to be called with an object to provide defaulting
+	// the provided object must be a pointer.
+	defaulterFuncs map[reflect.Type]func(interface{})
+
+	// converter stores all registered conversion functions. It also has
+	// default converting behavior.
+	converter *conversion.Converter
+
+	// versionPriority is a map of groups to ordered lists of versions for those groups indicating the
+	// default priorities of these versions as registered in the scheme
+	versionPriority map[string][]string
+
+	// observedVersions keeps track of the order we've seen versions during type registration
+	observedVersions []schema.GroupVersion
+
+	// schemeName is the name of this scheme.  If you don't specify a name, the stack of the NewScheme caller will be used.
+	// This is useful for error reporting to indicate the origin of the scheme.
+	schemeName string
+}
+```
+
+![from-golang-to-http-path](../055/from-golang-to-http-path.png)
+
+### 第四章 - 使用自定义资源(Custom Resources)
+
+![API-Extentions](../055/API-Extentions.png)
+
+> 第一个自定义 CRD
+
+```yaml
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  # name must match the spec fields below, and be in the form: <plural>.<group>
+  name: crontabs.stable.example.com
+spec:
+  # group name to use for REST API: /apis/<group>/<version>
+  group: stable.example.com
+  # list of versions supported by this CustomResourceDefinition
+  versions:
+    - name: v1
+      # Each version can be enabled/disabled by Served flag.
+      served: true
+      # One and only one version must be marked as the storage version.
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                cronSpec:
+                  type: string
+                image:
+                  type: string
+                replicas:
+                  type: integer
+  # either Namespaced or Cluster
+  scope: Namespaced
+  names:
+    # plural name to be used in the URL: /apis/<group>/<version>/<plural>
+    plural: crontabs
+    # singular name to be used as an alias on the CLI and for display
+    singular: crontab
+    # kind is normally the CamelCased singular type. Your resource manifests use this.
+    kind: CronTab
+    # shortNames allow shorter string to match your resource on the CLI
+    shortNames:
+    - ct
+```
+
+#### 感知信息
+
+> 通过以上的 xml 可以创建 CRD。
+
+```bash
+k apply -f resourcedefinition.yaml
+
+k api-resources | grep crontabs
+#crontabs                          ct           stable.example.com             true         CronTab
+```
+
+>1. 最初，kubectl 并不知道 `crontabs` 是什么。
+>2. 因此，kubectl 使用 `/apis` 感知 endpoint 的方式，向 API server 查询所有的 API groups。
+>3. 接着，kubectl 使用 /apis/group version 感知 endpoints 的方式，向 API server 查询所有 API groups 中的资源。
+>4. 然后，kubectl 将给定的类型 `crontabs` 转换成以下 3 种形式：
+>   1. Group（在此为 table.example.com）
+>   2. Version（在此为 v1alpha1）
+>   3. Resource（在此为 ats）
 
 
 
@@ -643,4 +827,10 @@ func CreateInformer() {
 
 
 
-Ó
+
+
+
+
+
+
+
