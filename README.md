@@ -57,6 +57,8 @@
 53. flink metrics prometheus
 54. [json schema usage](https://json-schema.org/)
 55. [go validator](https://github.com/go-playground/validator)
+56. [Golang 简洁架构实战]
+57. flink-sql tutorial
 
 ## 框架
 
