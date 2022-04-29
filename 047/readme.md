@@ -2,11 +2,92 @@
 
 ## reference
 
+- [汇编是深入理解 Go 的基础](https://segmentfault.com/a/1190000039753236)
 - [golang汇编基础知识](https://guidao.github.io/asm.html)
 - [A Quick Guide to Go's Assembler](https://go.dev/doc/asm)
 - [Golang Plan9 汇编入门](https://mioto.me/2021/01/plan9-assembly/)
 - [Go Assembly 示例](https://colobu.com/goasm/)
-- [汇编是深入理解 Go 的基础](https://segmentfault.com/a/1190000039753236)
+- [frame pointer及其用途](https://www.cnblogs.com/hustdc/p/7631370.html)
+- [汇编语言中mov和lea的区别有哪些？](https://www.zhihu.com/question/40720890)
+
+## 汇编是深入理解 Go 的基础
+
+> 1. `pc`,`fp` 等寄存器；
+> 2. `go tool compile -N -S assembler.go` 编译时记得通过 `-N` 关闭优化；
+> 3. 记住一个问题，`1` 和 `2` 这种参数也会使用栈的数据；
+> 4. `BP` BP称为指针寄存器，与SS连用，为访问现行堆栈段提供方便。通常BP寄存器在间接寻址中使用，操作数在堆栈段中，由SS段寄存器和BP组合形成操作数的地址，即BP中存放现行堆栈段中一个数据区的“基址”的偏移量，所以称BP为基址指针。
+> 5. Stack Segment，SS被称为[堆栈](https://baike.baidu.com/item/堆栈)段寄存器，用于存放堆栈段的基值。
+> 6. Go 汇编使用的是`caller-save`模式，被调用函数的参数、返回值、栈位置都需要由调用者维护、准备
+> 7. 汇编语言使用 `symbol+offset(FP)` 的方式，例如 `"".a+32(SP)` 表示的其实就是 `32(SP)`，而 `"".a` 其实只是一个 `symbol` 以便于用户可以更直观的阅读代码；
+
+>一般来说，函数调用的前几行大概形式都是：
+>
+>```asm
+>        0x0000 00000 (assembler.go:3)   SUBQ    $24, SP                                         ;; 这里是 callee 的栈帧，callee 的栈帧只包含了 caller BP 和 local var
+>        0x0004 00004 (assembler.go:3)   MOVQ    BP, 16(SP)                                      ;; 将BP存放到刚才我们开辟的栈空间的第一个位置，这样我们才知道当函数退出时应该从哪里继续
+>        0x0009 00009 (assembler.go:3)   LEAQ    16(SP), BP                                      ;; 修改BP让BP指向我们函数的栈，这样后续执行的时候才知道执行哪里的代码
+>```
+>
+>最主要是，需要将 caller BP 存储在开辟的栈的第一个位置，然后修改 callee BP 到新开辟的栈的第二个位置。
+
+![1512754361-6064962ee267d_fix732](1512754361-6064962ee267d.png)
+
+>"".add STEXT nosplit size=70 args=0x10 locals=0x18 funcid=0x0 align=0x0
+>
+>- `"".add` 表示了 `add` 函数，在链接期，`""`这个空字符会被替换为当前的包名: 也就是说，`"".add` 在链接到二进制文件后会变成 main.add
+>- `STEXT` 代表这是一段代码
+>- `size=70` 表示代码的长度是 70
+>- `args=0x10` 函数有两个 int 类型的参数，大小是 16
+>- `locals` 代表了本地变量的大小
+>- `NOSPLIT:` 向编译器表明不应该插入 stack-split 的用来检查栈需要扩张的前导指令。在我们 add 函数的这种情况下，编译器自己帮我们插入了这个标记: 它足够聪明地意识到，由于 add 没有任何局部变量且没有它自己的栈帧，所以一定不会超出当前的栈。不然，每次调用函数时，在这里执行栈检查就是完全浪费 CPU 时间了。
+>- `$24-16`中：24 表示函数的帧栈大小，16 表示的是函数的参数大小。注意，函数的帧栈包括了（BP，输入参数，本地变量）；
+
+```go
+package main
+    
+func add(a, b int) int{
+    sum := 0 // 不设置该局部变量sum，add栈空间大小会是0
+    sum = a+b
+    return sum
+}
+func main(){
+    println(add(1,2))
+}
+```
+
+> 执行 `go tool compile -N -l -S assembler.go > assembler.s` 编译
+
+```assembly
+"".add STEXT nosplit size=70 args=0x10 locals=0x18 funcid=0x0 align=0x0
+        ;; $24-16
+        ;; 24 表示的是函数的栈帧大小，16 表示的是函数的参数大小
+        0x0000 00000 (assembler.go:3)   TEXT    "".add(SB), NOSPLIT|ABIInternal, $24-16
+        0x0000 00000 (assembler.go:3)   SUBQ    $24, SP                                         ;; 这里是 callee 的栈帧，callee 的栈帧只包含了 caller BP 和 local var
+        0x0004 00004 (assembler.go:3)   MOVQ    BP, 16(SP)                                      ;; 将BP存放到刚才我们开辟的栈空间的第一个位置，这样我们才知道当函数退出时应该从哪里继续
+        0x0009 00009 (assembler.go:3)   LEAQ    16(SP), BP                                      ;; 修改BP让BP指向我们函数的栈，这样后续执行的时候才知道执行哪里的代码
+        ;; ignore FUNCDATA segment, it used to work in conjunction with GC ...
+        0x000e 00014 (assembler.go:3)   MOVQ    AX, "".a+32(SP)                                 ;; 复制参数 a 到栈
+        0x0013 00019 (assembler.go:3)   MOVQ    BX, "".b+40(SP)                                 ;; 赋值参数 b 到栈
+        0x0018 00024 (assembler.go:3)   MOVQ    $0, "".~r0(SP)                                  ;; 清零返回值
+        0x0020 00032 (assembler.go:4)   MOVQ    $0, "".sum+8(SP)                                ;; 为 sum 赋值
+        0x0029 00041 (assembler.go:5)   MOVQ    "".a+32(SP), AX                                 ;; AX = a
+        0x002e 00046 (assembler.go:5)   ADDQ    "".b+40(SP), AX                                 ;; AX += b
+        0x0033 00051 (assembler.go:5)   MOVQ    AX, "".sum+8(SP)                                ;; sum = AX
+        0x0038 00056 (assembler.go:6)   MOVQ    AX, "".~r0(SP)                                  ;; 修改返回值
+        0x003c 00060 (assembler.go:6)   MOVQ    16(SP), BP                                      ;; 恢复BP到调用前
+        0x0041 00065 (assembler.go:6)   ADDQ    $24, SP                                         ;; 恢复SP到调用前
+        0x0045 00069 (assembler.go:6)   RET                                                     ;; 返回
+        0x0000 48 83 ec 18 48 89 6c 24 10 48 8d 6c 24 10 48 89  H...H.l$.H.l$.H.
+        0x0010 44 24 20 48 89 5c 24 28 48 c7 04 24 00 00 00 00  D$ H.\$(H..$....
+        0x0020 48 c7 44 24 08 00 00 00 00 48 8b 44 24 20 48 03  H.D$.....H.D$ H.
+        0x0030 44 24 28 48 89 44 24 08 48 89 04 24 48 8b 6c 24  D$(H.D$.H..$H.l$
+        0x0040 10 48 83 c4 18 c3                                .H....
+        ;; ...
+```
+
+> 注意，下面的这个图是原文中的图，而这个图和我们实际的栈帧有差别。
+
+![函数栈帧](函数栈帧.png)
 
 ## golang汇编基础知识
 
