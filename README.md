@@ -59,6 +59,7 @@
 55. [go validator](https://github.com/go-playground/validator)
 56. [Golang 简洁架构实战]
 57. flink-sql tutorial
+58. [小白也能看懂的context包详解：从入门到精通](https://mp.weixin.qq.com/s/_5gBIwvtXKJME7AV2W2bqQ)
 
 ## 框架
 
