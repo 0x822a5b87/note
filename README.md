@@ -61,6 +61,7 @@
 57. flink-sql tutorial
 58. [小白也能看懂的context包详解：从入门到精通](https://mp.weixin.qq.com/s/_5gBIwvtXKJME7AV2W2bqQ)
 59. [flink-sql-cookbook](https://github.com/0x822a5b87/flink-sql-cookbook)
+60. [tcp connect]
 
 ## 框架
 
